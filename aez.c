@@ -16,6 +16,8 @@
  * flags are "-maes -mssse3".  
  */
 
+#include <assert.h>
+
 
 /*
  * Architecture flags. If the platform supports the AES-NI and SSSE3 instruction 
@@ -189,32 +191,48 @@ static void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
 #ifdef __USE_AES_NI
 
 /* Full 10-round AES. */ 
-static __m128i aes10(__m128i M, __m128i K[]) 
+static __m128i aes10(__m128i M, Context *context) 
 {
-  M = _mm_aesenc_si128(M ^ K[0], K[1]);
-  M = _mm_aesenc_si128(M, K[2]);
-  M = _mm_aesenc_si128(M, K[3]);
-  M = _mm_aesenc_si128(M, K[4]);
-  M = _mm_aesenc_si128(M, K[5]);
-  M = _mm_aesenc_si128(M, K[6]);
-  M = _mm_aesenc_si128(M, K[7]);
-  M = _mm_aesenc_si128(M, K[8]);
-  M = _mm_aesenc_si128(M, K[9]);
-  return _mm_aesenclast_si128 (M, K[10]);
+  M = _mm_aesenc_si128(M, context->I.block);
+  M = _mm_aesenc_si128(M, context->L.block);
+  M = _mm_aesenc_si128(M, context->J[1].block);
+  M = _mm_aesenc_si128(M, context->I.block);
+  M = _mm_aesenc_si128(M, context->L.block);
+  M = _mm_aesenc_si128(M, context->J[1].block);
+  M = _mm_aesenc_si128(M, context->I.block);
+  M = _mm_aesenc_si128(M, context->L.block);
+  M = _mm_aesenc_si128(M, context->J[1].block);
+  return _mm_aesenclast_si128 (M, context->I.block);
 } 
 
-/* In the security proof, AES4 is taken as an AXU hash function. */ 
-static __m128i aes4(__m128i M, __m128i K[]) 
+/*  AES4. */ 
+static __m128i aes4_0(__m128i M, Context *context) 
 {
-  M = _mm_aesenc_si128(M ^ K[0], K[1]); 
-  M = _mm_aesenc_si128(M, K[2]); 
-  M = _mm_aesenc_si128(M, K[3]);
-  M = _mm_aesenc_si128(M, K[4]);
+  M = _mm_aesenc_si128(M, context->I.block);
+  M = _mm_aesenc_si128(M, context->J[1].block); 
+  M = _mm_aesenc_si128(M, context->L.block); 
+  M = _mm_aesenc_si128(M, _mm_setzero_si128());
   return M; 
 } 
 
+static __m128i aes4_1(__m128i M, Context *context) 
+{
+  M = _mm_aesenc_si128(M, context->J[1].block);
+  M = _mm_aesenc_si128(M, context->L.block); 
+  M = _mm_aesenc_si128(M, context->I.block); 
+  M = _mm_aesenc_si128(M, _mm_setzero_si128());
+  return M; 
+} 
 
-/* Like AES4, but with a 1-block key schedule. */
+static __m128i aes4_2(__m128i M, Context *context) 
+{
+  M = _mm_aesenc_si128(M, context->L.block); 
+  M = _mm_aesenc_si128(M, context->I.block); 
+  M = _mm_aesenc_si128(M, context->J[1].block); 
+  M = _mm_aesenc_si128(M, context->I.block); 
+  return M; 
+} 
+
 static __m128i aes4_short(__m128i M, __m128i K) 
 {
   M = _mm_aesenc_si128(M ^ K, K); 
@@ -224,16 +242,6 @@ static __m128i aes4_short(__m128i M, __m128i K)
   return M; 
 } 
 
-
-/* Like AES4, but use zero in the last round. */ 
-static __m128i aes4_zero(__m128i M, __m128i K[]) 
-{
-  M = _mm_aesenc_si128(M ^ K[0], K[1]); 
-  M = _mm_aesenc_si128(M, K[2]); 
-  M = _mm_aesenc_si128(M, K[3]);
-  M = _mm_aesenc_si128(M, _mm_setzero_si128());
-  return M; 
-} 
 #endif
 
 
@@ -313,7 +321,44 @@ static void reset(Context *context)
 
 
 
-/* Initialize context. */
+/* ---- AEZ Tweakable blockcipher ------------------------------------------ */
+
+void E(Block *Y, const Block X, int i, int j, Context *context)
+{
+  if (i == -1 && 0 <= j && j <= 7)
+  {
+    xor_block(*Y, X, context->J[j]);
+    Y->block = aes10(Y->block, context);
+  }
+
+  else if (i == 0 && 0 <= j && j <= 7)
+  {
+    xor_block(*Y, X, context->J[j]);
+    Y->block = aes4_0(Y->block, context);
+  }
+
+  else if (1 <= i && i <= 2 && j >= 1)
+  {
+    xor_block(*Y, X, context->J[j % 8]);
+    xor_block(*Y, *Y, context->L1);
+    if (i == 1) Y->block = aes4_1(Y->block, context);
+    else        Y->block = aes4_2(Y->block, context);
+  }
+
+  else if (i >= 3 && j >= 1)
+    assert(0); // Not implemented yet. j >= 1
+  
+  else if (i >= 3 && j == 0)
+    assert(0); // Not implemented yet. j == 0
+
+  else printf("Uh Oh!!!\n");
+
+}
+
+
+
+/* ----- AEZ Extract ------------------------------------------------------- */
+
 void extract(Context *context, const char *key, unsigned key_bytes)
 {
   int i, j, k, m;
@@ -414,10 +459,25 @@ int main()
   
   char key [] = "This is a great key.";
   int key_bytes = strlen((const char *)key); 
-
+  
   Context context;
   extract(&context, key, key_bytes);
-  display_context(&context);
+  //display_context(&context);
+
+  Block M, C;
+  zero_block(M);
+  zero_block(C);
+  for (int i = -1; i < 3; i++)
+  {
+    for (int j = 0; j < 8; j++)
+    {
+      if (i > 0 && j == 0) continue;
+      E(&C, M, i, j, &context);
+      printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
+    }
+  }
+  
+
 
   return 0; 
 }
