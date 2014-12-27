@@ -18,7 +18,6 @@
 
 #include <assert.h>
 
-
 /*
  * Architecture flags. If the platform supports the AES-NI and SSSE3 instruction 
  * sets, set __USE_AES_NI; if the platform doesn't have hardware support for AES, 
@@ -27,6 +26,8 @@
  */
 #define __USE_AES_NI
 #define __ARCH_64
+
+
 
 #ifndef __USE_AES_NI 
 #include "rijndael-alg-fst.h"
@@ -46,7 +47,7 @@
 #include <stdio.h>
 
 
-/* ----- AEZ context -------------------------------------------------------- */
+/* ----- AEZ context. -------------------------------------------------------*/
 
 typedef uint8_t Byte; 
 typedef uint32_t Word; 
@@ -63,28 +64,34 @@ typedef union {
 
 typedef struct {
 
-  /* Tweak, key */
-  Block I, L, L1, J [8]; 
+  /* Key schedules for software AES code. There is probably a way to 
+   * do this without explicitly laying out each key schedule. */ 
+#ifndef __USE_AES_NI
+  Block k0[5], k1[5], k2[5], K[11];
+#endif
+
+  /* Tweaks, key. */
+  Block I, L, L1, J, Js [8]; 
 
 } Context; 
 
+static void display_block(const Block X)
+{
+  for (int i = 0; i < 4; i ++)
+    printf("0x%08x ", X.word[i]); 
+}
 
-/* ---- Constants ---------------------------------------------------------- */
 
-const ALIGN(16) char z [16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
+/* ---- Various primitives. ------------------------------------------------ */
 
-
-
-/* ---- Various primitives ------------------------------------------------- */ 
-
-#define MAX(a, b) (a < b ? b : a)
+#define max(a, b) (a < b ? b : a)
 
 /* Reverse bytes of a 32-bit integer. */ 
 #define reverse_u32(n) ( \
- ((n & 0x000000ffu) << 24) | \
- ((n & 0x0000ff00u) <<  8) | \
- ((n & 0x00ff0000u) >>  8) | \
- ((n & 0xff000000u) >> 24)   \
+ (((n) & 0x000000ffu) << 24) | \
+ (((n) & 0x0000ff00u) <<  8) | \
+ (((n) & 0x00ff0000u) >>  8) | \
+ (((n) & 0xff000000u) >> 24)   \
 )
 
 /*
@@ -100,7 +107,8 @@ const ALIGN(16) char z [16] = {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15};
     (X).word[3] = reverse_u32((X).word[3]); \
   }
 #else 
-  #define toggle_endian(X) {} 
+  #define toggle_endian(X) { \
+  }
 #endif 
 
 #ifdef __USE_AES_NI /* Copy a block. */ 
@@ -186,88 +194,98 @@ static void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
 }
 
 
-/* ----- AES-NI ------------------------------------------------------------ */ 
+/* ----- AES calls. -------------------------------------------------------- */
 
-#ifdef __USE_AES_NI
 
-/* Full 10-round AES. */ 
-static __m128i aes10(__m128i M, Context *context) 
+/* AES10. */ 
+void aes10(Block *Y, Block X, Context *context) 
 {
-  M = _mm_aesenc_si128(M, context->I.block);
-  M = _mm_aesenc_si128(M, context->L.block);
-  M = _mm_aesenc_si128(M, context->J[1].block);
-  M = _mm_aesenc_si128(M, context->I.block);
-  M = _mm_aesenc_si128(M, context->L.block);
-  M = _mm_aesenc_si128(M, context->J[1].block);
-  M = _mm_aesenc_si128(M, context->I.block);
-  M = _mm_aesenc_si128(M, context->L.block);
-  M = _mm_aesenc_si128(M, context->J[1].block);
-  return _mm_aesenclast_si128 (M, context->I.block);
+#ifdef __USE_AES_NI
+  X.block = _mm_aesenc_si128(X.block, context->I.block);
+  X.block = _mm_aesenc_si128(X.block, context->L.block);
+  X.block = _mm_aesenc_si128(X.block, context->J.block);
+  X.block = _mm_aesenc_si128(X.block, context->I.block);
+  X.block = _mm_aesenc_si128(X.block, context->L.block);
+  X.block = _mm_aesenc_si128(X.block, context->J.block);
+  X.block = _mm_aesenc_si128(X.block, context->I.block);
+  X.block = _mm_aesenc_si128(X.block, context->L.block);
+  X.block = _mm_aesenc_si128(X.block, context->J.block);
+  Y->block = _mm_aesenc_si128(X.block, context->I.block);
+#else
+  cp_block(*Y, X); 
+  rijndaelEncryptRound((uint32_t *)context->K, 11, Y->byte, 10); 
+#endif
 } 
 
 /*  AES4. */ 
-static __m128i aes4_0(__m128i M, Context *context) 
+void aes4_0(Block *Y, Block X, Context *context) 
 {
-  M = _mm_aesenc_si128(M, context->I.block);
-  M = _mm_aesenc_si128(M, context->J[1].block); 
-  M = _mm_aesenc_si128(M, context->L.block); 
-  M = _mm_aesenc_si128(M, _mm_setzero_si128());
-  return M; 
-} 
-
-static __m128i aes4_1(__m128i M, Context *context) 
-{
-  M = _mm_aesenc_si128(M, context->J[1].block);
-  M = _mm_aesenc_si128(M, context->L.block); 
-  M = _mm_aesenc_si128(M, context->I.block); 
-  M = _mm_aesenc_si128(M, _mm_setzero_si128());
-  return M; 
-} 
-
-static __m128i aes4_2(__m128i M, Context *context) 
-{
-  M = _mm_aesenc_si128(M, context->L.block); 
-  M = _mm_aesenc_si128(M, context->I.block); 
-  M = _mm_aesenc_si128(M, context->J[1].block); 
-  M = _mm_aesenc_si128(M, context->I.block); 
-  return M; 
-} 
-
-static __m128i aes4_short(__m128i M, __m128i K) 
-{
-  M = _mm_aesenc_si128(M ^ K, K); 
-  M = _mm_aesenc_si128(M, K); 
-  M = _mm_aesenc_si128(M, K);
-  M = _mm_aesenc_si128(M, K);
-  return M; 
-} 
-
+#ifdef __USE_AES_NI
+  X.block = _mm_aesenc_si128(X.block, context->I.block);
+  X.block = _mm_aesenc_si128(X.block, context->J.block); 
+  X.block = _mm_aesenc_si128(X.block, context->L.block); 
+  Y->block = _mm_aesenc_si128(X.block, _mm_setzero_si128());
+#else
+  cp_block(*Y, X); 
+  rijndaelEncryptRound((uint32_t *)context->k0, 10, Y->byte, 4);  
 #endif
 
+} 
 
-/* ---- AEZ tweaks --------------------------------------------------------- */
-
-/*
- * Reverse byte order when computing tweaks. This is meant as an 
- * optimization for little endian systems. 
- */
-static void rev_block(Byte X []) 
+void aes4_1(Block *Y, Block X, Context *context) 
 {
-  Byte i, tmp[16];
-  memcpy(tmp, X, 16);
-  for (i=0; i<16; i++) X[i] = tmp[15-i];
-}
+#ifdef __USE_AES_NI
+  X.block = _mm_aesenc_si128(X.block, context->J.block);
+  X.block = _mm_aesenc_si128(X.block, context->L.block); 
+  X.block = _mm_aesenc_si128(X.block, context->I.block); 
+  Y->block = _mm_aesenc_si128(X.block, _mm_setzero_si128());
+#else
+  cp_block(*Y, X); 
+  rijndaelEncryptRound((uint32_t *)context->k1, 10, Y->byte, 4);  
+#endif
+} 
+
+void aes4_2(Block *Y, Block X, Context *context) 
+{
+#ifdef __USE_AES_NI
+  X.block = _mm_aesenc_si128(X.block, context->L.block); 
+  X.block = _mm_aesenc_si128(X.block, context->I.block); 
+  X.block = _mm_aesenc_si128(X.block, context->J.block); 
+  Y->block = _mm_aesenc_si128(X.block, context->I.block); 
+#else
+  cp_block(*Y, X); 
+  rijndaelEncryptRound((uint32_t *)context->k2, 10, Y->byte, 4);  
+#endif
+} 
+
+void aes4_short(Block *Y, Block X, const Block K) 
+{
+#ifdef __USE_AES_NI
+  X.block = _mm_aesenc_si128(X.block ^ K.block, K.block); 
+  X.block = _mm_aesenc_si128(X.block, K.block); 
+  X.block = _mm_aesenc_si128(X.block, K.block);
+  Y->block = _mm_aesenc_si128(X.block, K.block);
+#else
+  Block sched [5]; 
+  for (int i = 0; i < 5; i++)
+    cp_block(sched[i], K); 
+  cp_block(*Y, X); 
+  rijndaelEncryptRound((uint32_t *)sched, 10, Y->byte, 4);  
+#endif
+} 
+
+
+
+/* ---- AEZ tweaks. -------------------------------------------------------- */
 
 /*
  * Multiply-by-two operation for key tweaking. 
  */
 static void dot2(Byte X []) {
-  rev_block(X); 
   Byte tmp = X[0];
   for (int i = 0; i < 15; i++)
     X[i] = (Byte)((X[i] << 1) | (X[i+1] >> 7));
   X[15] = (Byte)((X[15] << 1) ^ ((tmp >> 7) * 135));
-  rev_block(X); 
 }
 
 /*
@@ -300,7 +318,6 @@ static void dot_inc(Block *Xs, int n)
   }
 }
 
-
 /*
  * Update doubling tweak `T` if necessary. `i` doesn't actually
  * have an affect on the tweak. 
@@ -308,7 +325,7 @@ static void dot_inc(Block *Xs, int n)
 static void variant(Context *context, int i, int j) 
 {
   if (j > 8 && (j - 1) % 8 == 0)
-    dot2(context->L.byte); 
+    dot2(context->L1.byte); 
 }
 
 /*
@@ -317,56 +334,26 @@ static void variant(Context *context, int i, int j)
 static void reset(Context *context)
 {
   cp_block(context->L1, context->L);
+  toggle_endian(context->L1); 
 }
 
 
 
-/* ---- AEZ Tweakable blockcipher ------------------------------------------ */
-
-void E(Block *Y, const Block X, int i, int j, Context *context)
-{
-  if (i == -1 && 0 <= j && j <= 7)
-  {
-    xor_block(*Y, X, context->J[j]);
-    Y->block = aes10(Y->block, context);
-  }
-
-  else if (i == 0 && 0 <= j && j <= 7)
-  {
-    xor_block(*Y, X, context->J[j]);
-    Y->block = aes4_0(Y->block, context);
-  }
-
-  else if (1 <= i && i <= 2 && j >= 1)
-  {
-    xor_block(*Y, X, context->J[j % 8]);
-    xor_block(*Y, *Y, context->L1);
-    if (i == 1) Y->block = aes4_1(Y->block, context);
-    else        Y->block = aes4_2(Y->block, context);
-  }
-
-  else if (i >= 3 && j >= 1)
-    assert(0); // Not implemented yet. j >= 1
-  
-  else if (i >= 3 && j == 0)
-    assert(0); // Not implemented yet. j == 0
-
-  else printf("Uh Oh!!!\n");
-
-}
-
-
-
-/* ----- AEZ Extract ------------------------------------------------------- */
+/* ----- AEZ Extract. ------------------------------------------------------ */
 
 void extract(Context *context, const char *key, unsigned key_bytes)
 {
-  int i, j, k, m;
+  unsigned i, j, k, m;
+
+  Block z;
+  for (i = 0; i < 16; i++)
+    z.byte[i] = i;
+  toggle_endian(z);
   
   /* Number of blocks. */
-  m = key_bytes / 128; 
-  if (key_bytes % 128 > 0) m++; 
-  m = MAX(m, 1); 
+  m = key_bytes / 16; 
+  if (key_bytes % 16 > 0) m++; 
+  m = max(m, 1); 
 
   Block C, X [3], buff, K;
   zero_block(buff); 
@@ -378,13 +365,15 @@ void extract(Context *context, const char *key, unsigned key_bytes)
   for (j = 0; j < m-1; j++) // Full key blocks
   {
     load_block(K, &key[k]); k += 16;
-    buff.lword[1] = j;
+    buff.word[3] = reverse_u32(j + 1); 
 
     for (i = 0; i < 3; i++)
     {
-      buff.lword[0] = i;
-      C.block = aes4_short(buff.block, *(__m128i *)z); 
-      X[i].block ^= aes4_short(K.block, C.block); 
+      buff.word[1] = reverse_u32(i + 1); 
+      aes4_short(&C, buff, z); 
+      toggle_endian(C);
+      aes4_short(&C, K, C); 
+      xor_block(X[i], X[i], C); 
     }
   }
 
@@ -394,34 +383,96 @@ void extract(Context *context, const char *key, unsigned key_bytes)
      zero_block(K); 
      cp_bytes(K.byte, &key[k], j); 
      K.byte[j] = 0x80;
-     buff.lword[1] = 0; 
+     zero_block(buff);
   }
 
   else // Full last block
   {
-    load_block(K, &key[k]); 
-    buff.lword[1] = m;
+    load_block(K, &key[k]);
+    buff.word[3] = reverse_u32(m);
   } 
 
   for (i = 0; i < 3; i++)
   {
-    buff.lword[0] = i;
-    C.block = aes4_short(buff.block, *(__m128i *)z); 
-    X[i].block ^= aes4_short(K.block, C.block); 
+    buff.word[1] = reverse_u32(i + 1); 
+    aes4_short(&C, buff, z); 
+    toggle_endian(C);
+    aes4_short(&C, K, C); 
+    xor_block(X[i], X[i], C);  
   }
 
   /* Set up key schedule and tweak context. */
-  cp_block(context->I, X[0]);
+  cp_block(context->I, X[0]); toggle_endian(context->I); 
+  cp_block(context->J, X[1]); toggle_endian(context->J); 
+  cp_block(context->L, X[2]); toggle_endian(context->L);
 
-  zero_block(context->J[0]); 
-  cp_block(context->J[1], X[1]); 
+  /* Preompute j*J's. */
+  zero_block(context->Js[0]); 
+  cp_block(context->Js[1], X[1]);
   for (i = 0; i < 8; i++)
-    dot_inc(context->J, i); 
-
-  cp_block(context->L, X[2]); 
+    dot_inc(context->Js, i); 
+  
+  /* Doubling tweak. */
   cp_block(context->L1, X[2]); 
 
-}
+#ifndef __USE_AES_NI
+  zero_block(context->k0[0]); zero_block(context->k0[4]); 
+  zero_block(context->k1[0]); zero_block(context->k1[4]); 
+  zero_block(context->k2[0]); zero_block(context->K[0]); 
+
+  cp_block(context->k0[2], context->J); cp_block(context->k1[1], context->J); 
+  cp_block(context->k2[3], context->J); cp_block(context->K[3], context->J);
+  cp_block(context->K[6], context->J);  cp_block(context->K[9], context->J);
+
+  cp_block(context->k0[1], context->I); cp_block(context->k1[3], context->I); 
+  cp_block(context->k2[2], context->I); cp_block(context->k2[4], context->I); 
+  cp_block(context->K[1], context->I);  cp_block(context->K[4], context->I);
+  cp_block(context->K[7], context->I);  cp_block(context->K[10], context->I);
+
+  cp_block(context->k0[3], context->L); cp_block(context->k1[2], context->L); 
+  cp_block(context->k2[1], context->L); cp_block(context->K[2], context->L);
+  cp_block(context->K[5], context->L);  cp_block(context->K[8], context->L);
+#endif
+
+} // extract()
+
+
+/* ---- AEZ Tweakable blockcipher. ----------------------------------------- */
+
+void E(Block *Y, const Block X, int i, int j, Context *context)
+{
+  if (i == -1 && 0 <= j && j <= 7)
+  {
+    xor_block(*Y, X, context->Js[j]);
+    aes10(Y, *Y, context); 
+  }
+
+  else if (i == 0 && 0 <= j && j <= 7)
+  {
+    xor_block(*Y, X, context->Js[j]);
+    aes4_0(Y, *Y, context); 
+  }
+
+  else if (1 <= i && i <= 2 && j >= 1)
+  {
+    xor_block(*Y, X, context->Js[j % 8]);
+    xor_block(*Y, *Y, context->L1);
+    if (i == 1) aes4_1(Y, *Y, context); 
+    else        aes4_2(Y, *Y, context); 
+  }
+
+  else if (i >= 3 && j >= 1)
+    assert(0); // Not implemented yet. j >= 1
+  
+  else if (i >= 3 && j == 0)
+    assert(0); // Not implemented yet. j == 0
+
+  else printf("Uh Oh!!!\n");
+
+} // E()
+
+
+
 
 
 
@@ -430,24 +481,19 @@ void extract(Context *context, const char *key, unsigned key_bytes)
 #include <time.h>
 #include <stdio.h>
 
-static void display_block(const Block X) 
-{
-  for (int i = 0; i < 4; i ++)
-    printf("0x%08x ", X.word[i]); 
-}
-
 static void display_context(Context *context)
 {
   unsigned i; 
   printf("+----------------------------------------------------+\n"); 
-  printf("| I    = "); display_block(context->I);  printf("|\n"); 
-  printf("| L    = "); display_block(context->L);  printf("|\n"); 
-  printf("| L'   = "); display_block(context->L1); printf("|\n"); 
+  printf("| I   = "); display_block(context->I);  printf("|\n"); 
+  printf("| J   = "); display_block(context->J);  printf("|\n"); 
+  printf("| L   = "); display_block(context->L);  printf("|\n"); 
+  printf("| L'  = "); display_block(context->L1); printf("|\n"); 
 
   for (i = 0; i < 8; i++)
   {
-    printf("| J[%d] = ", i); 
-    display_block(context->J[i]); 
+    printf("| %d*J = ", i); 
+    display_block(context->Js[i]); 
     printf("|\n"); 
   }
 
@@ -457,27 +503,27 @@ static void display_context(Context *context)
 int main()
 {
   
-  char key [] = "This is a great key.";
+  char key [] = "This is a really great key.";
   int key_bytes = strlen((const char *)key); 
   
   Context context;
   extract(&context, key, key_bytes);
   //display_context(&context);
 
+
   Block M, C;
   zero_block(M);
   zero_block(C);
-  for (int i = -1; i < 3; i++)
+  M.byte[1] = 2;
+  display_block(M); printf("Sane? \n");
+  int i = 2; 
+  for (int j = 1; j < 100; j++)
   {
-    for (int j = 0; j < 8; j++)
-    {
-      if (i > 0 && j == 0) continue;
-      E(&C, M, i, j, &context);
-      printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
-    }
+    E(&C, M, i, j, &context);
+    printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
+    variant(&context, i, j + 1); 
   }
   
 
-
-  return 0; 
+return 0; 
 }
