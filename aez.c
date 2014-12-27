@@ -71,7 +71,7 @@ typedef struct {
 #endif
 
   /* Tweaks, key. */
-  Block I, L, L1, J, Js [8]; 
+  Block I, L, L1, J, J1, Js [8]; 
 
 } Context; 
 
@@ -322,26 +322,39 @@ static void dot_inc(Block *Xs, int n)
  * Update doubling tweak `T` if necessary. `i` doesn't actually
  * have an affect on the tweak. 
  */
-static void variant(Context *context, int i, int j) 
+static void update(Context *context, int inc_l, int inc_j) 
 {
-  if (j > 8 && (j - 1) % 8 == 0)
+  if (inc_l) 
     dot2(context->L1.byte); 
+
+  if (inc_j) {
+    dot2(context->J1.byte); 
+    dot2(context->J1.byte); 
+    dot2(context->J1.byte); 
+  }
 }
 
 /*
  * Reset tweak. 
  */
-static void reset(Context *context)
+static void reset(Context *context, int inc_l, int inc_j)
 {
-  cp_block(context->L1, context->L);
-  toggle_endian(context->L1); 
+  if (inc_l) {
+    cp_block(context->L1, context->L);
+    toggle_endian(context->L1); 
+  }
+
+  if (inc_j) {
+    cp_block(context->J1, context->J);
+    toggle_endian(context->J1); 
+  }
 }
 
 
 
 /* ----- AEZ Extract. ------------------------------------------------------ */
 
-void extract(Context *context, const char *key, unsigned key_bytes)
+void extract(Context *context, const Byte *key, unsigned key_bytes)
 {
   unsigned i, j, k, m;
 
@@ -412,8 +425,9 @@ void extract(Context *context, const char *key, unsigned key_bytes)
   for (i = 0; i < 8; i++)
     dot_inc(context->Js, i); 
   
-  /* Doubling tweak. */
+  /* Doubling tweaks. */
   cp_block(context->L1, X[2]); 
+  cp_block(context->J1, X[1]); 
 
 #ifndef __USE_AES_NI
   zero_block(context->k0[0]); zero_block(context->k0[4]); 
@@ -462,15 +476,71 @@ void E(Block *Y, const Block X, int i, int j, Context *context)
   }
 
   else if (i >= 3 && j >= 1)
-    assert(0); // Not implemented yet. j >= 1
-  
-  else if (i >= 3 && j == 0)
-    assert(0); // Not implemented yet. j == 0
+  {
+    xor_block(*Y, X, context->Js[j % 8]); 
+    xor_block(*Y, *Y, context->L1);
+    xor_block(*Y, *Y, context->J1);
+    aes4_0(Y, *Y, context); 
+  }
 
-  else printf("Uh Oh!!!\n");
+  else if (i >= 3 && j == 0)
+  {
+    xor_block(*Y, X, context->J1);
+    aes4_0(Y, *Y, context); 
+  }
+
+  else { printf("Uh Oh!!!\n"); assert(0); }
 
 } // E()
 
+
+
+/* ----- AEZ axu-hash, pseudorandom funcion. ------------------------------- */
+
+void hash(Byte *delta, Byte *tags [], 
+                unsigned num_tags, unsigned tag_bytes [],  Context *context)
+{
+  unsigned i, j, k, m; 
+  Block H, X; 
+  zero_block(H); 
+
+  for (i = 0; i < num_tags; i++)
+  {
+    m = tag_bytes[i] / 16; 
+    if (tag_bytes[i] % 16 > 0) m++; 
+    m = max(m, 1); 
+    
+    k = 0; update(context, 0, 1); 
+    for (j = 1; j < m; j++)
+    {
+      load_block(X, &tags[i][k]); k += 16;
+      E(&X, X, 3+i, j, context);
+      printf("%d, %d\n", 3+i, j); 
+      xor_block(H, H, X); 
+      update(context, j % 8 == 0, 0);  
+    } // Full blocks
+    
+    j = tag_bytes[i] % 16; 
+    if (j > 0) { // Partial last block
+       zero_block(X); 
+       cp_bytes(X.byte, &tags[i][k], j); 
+       X.byte[j] = 0x80;
+       j = 0; 
+    }
+    else { // Full last block
+      load_block(X, &tags[i][k]);
+      j = m; 
+    }
+    
+    printf("%d, %d .\n", 3+i, j); 
+    E(&X, X, 3+i, j, context); 
+    xor_block(H, H, X); 
+    reset(context, 1, 0); 
+  } // Each tag
+    
+  cp_bytes(delta, H.byte, 16);
+  reset(context, 1, 1); 
+} // hash()
 
 
 
@@ -487,6 +557,7 @@ static void display_context(Context *context)
   printf("+----------------------------------------------------+\n"); 
   printf("| I   = "); display_block(context->I);  printf("|\n"); 
   printf("| J   = "); display_block(context->J);  printf("|\n"); 
+  printf("| J'  = "); display_block(context->J1); printf("|\n"); 
   printf("| L   = "); display_block(context->L);  printf("|\n"); 
   printf("| L'  = "); display_block(context->L1); printf("|\n"); 
 
@@ -503,27 +574,53 @@ static void display_context(Context *context)
 int main()
 {
   
-  char key [] = "This is a really great key.";
-  int key_bytes = strlen((const char *)key); 
-  
+  Block res; 
+  Byte key [] = "This is a really great key.";
+  Byte nonce [] = "Celebraties are awesome"; 
+  Byte msg [] = "This is a great This is a great. sdkjf"; 
+  unsigned key_bytes = strlen((const char *)key); 
+  unsigned nonce_bytes = strlen((const char *)nonce); 
+  unsigned msg_bytes = strlen((const char *)msg); 
+  unsigned tau = 0; 
+
   Context context;
   extract(&context, key, key_bytes);
+  
+
+
+  Block guy; zero_block(guy); 
+  guy.word[3] = reverse_u32(tau);
+
+
+  Byte *tags [3]; tags[0] = guy.byte; tags[1] = nonce; tags[2] = msg; 
+  unsigned tag_bytes [] = {16, nonce_bytes, msg_bytes}; 
+  unsigned num_tags = 3; 
+    
+  hash(res.byte, tags, num_tags, tag_bytes, &context); 
+  display_block(res); printf("\n");  
+
+
+  /* 
+   * TODO Test the blockcipher for i>2,j>0 and i>2,j=0.    
+   */
+
   //display_context(&context);
 
-
-  Block M, C;
-  zero_block(M);
-  zero_block(C);
-  M.byte[1] = 2;
-  display_block(M); printf("Sane? \n");
-  int i = 2; 
-  for (int j = 1; j < 100; j++)
-  {
-    E(&C, M, i, j, &context);
-    printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
-    variant(&context, i, j + 1); 
-  }
+  //Block M, C;
+  //zero_block(M);
+  //zero_block(C);
+  //M.byte[1] = 2;
+  //display_block(M); printf("Sane? \n");
+  //int i = 2; 
+  //for (int j = 1; j < 100; j++)
+  //{
+  //  E(&C, M, i, j, &context);
+  //  printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
+  //  update(&context, j % 8 == 0, 0); 
+  //}
+  //reset(&context, 1, 0); 
   
+
 
 return 0; 
 }
