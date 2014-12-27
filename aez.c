@@ -437,6 +437,7 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
 } // extract()
 
 
+
 /* ---- AEZ Tweakable blockcipher. ----------------------------------------- */
 
 void E(Block *Y, const Block X, int i, int j, Context *context)
@@ -534,6 +535,33 @@ void hash(Byte *delta, Byte *tags [],
 } // hash()
 
 
+void prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [], 
+                                                unsigned tau, Context *context)
+{
+  unsigned i, j, k, m = tau / 16; 
+  if (tau % 16 > 0) m++; 
+  m = max(m, 1); 
+  
+  Block H, X, ctr; zero_block(ctr); 
+  hash(H.byte, tags, num_tags, tag_bytes, context); 
+
+  for (i=0, j=0; i < m-1; i++)
+  {
+    xor_block(X, ctr, H); 
+    E(&X, X, -1, 3, context); 
+    cp_bytes(&res[j], X.byte, 16); 
+    j += 16;
+
+    k = 15; /* TODO, ctr doesn't match spec. */  
+    do { ctr.byte[k]++; k--; } 
+    while (ctr.byte[k+1] == 0); 
+  }
+
+  xor_block(X, ctr, H); 
+  E(&X, X, -1, 3, context); 
+  cp_bytes(&res[j], X.byte, tau - j); 
+} // prf()
+
 
 
 
@@ -564,7 +592,7 @@ static void display_context(Context *context)
 int main()
 {
   
-  Block res; 
+  Byte res [256]; memset(res, 0, 256); 
   Byte key [] = "This is a really great key.";
   Byte nonce [] = "Celebraties are awesome"; 
   Byte msg [] = "This i a great This is a great. sdkjf"; 
@@ -586,8 +614,9 @@ int main()
   unsigned tag_bytes [] = {16, nonce_bytes, msg_bytes}; 
   unsigned num_tags = 3; 
     
-  hash(res.byte, tags, num_tags, tag_bytes, &context); 
-  display_block(res); printf("\n");  
+  prf(res, tags, num_tags, tag_bytes, 4, &context); 
+  display_block(*(Block *)&res[0]); printf("\n");  
+  display_block(*(Block *)&res[16]); printf("\n");  
 
 
   //display_context(&context);
