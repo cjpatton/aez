@@ -5,7 +5,7 @@
  *
  * It uses a platform-independent implementation of AES (by Vincent Rijmen 
  * et al.) if the x86 AES-NI instruction set is unavailable (see 
- * rijndael-alg-fst.{h,c}). This is black-box AES, exceppt that the flag 
+ * rijndael-alg-fst.{h,c}). This code is unmodified, exceppt that the flag 
  * `INTERMEDIATE_VALUE_KAT` is set. 
  *
  *   Written by Chris Patton <chrispatton@gmail.com>.
@@ -71,7 +71,7 @@ typedef struct {
 #endif
 
   /* Tweaks, key. */
-  Block I, L, L1, J, J1, Js [8]; 
+  Block I, L, L1, J, Js [9]; 
 
 } Context; 
 
@@ -322,32 +322,19 @@ static void dot_inc(Block *Xs, int n)
  * Update doubling tweak `T` if necessary. `i` doesn't actually
  * have an affect on the tweak. 
  */
-static void update(Context *context, int inc_l, int inc_j) 
+static void update(Context *context, int inc_l) 
 {
   if (inc_l) 
     dot2(context->L1.byte); 
-
-  if (inc_j) {
-    dot2(context->J1.byte); 
-    dot2(context->J1.byte); 
-    dot2(context->J1.byte); 
-  }
 }
 
 /*
  * Reset tweak. 
  */
-static void reset(Context *context, int inc_l, int inc_j)
+static void reset(Context *context)
 {
-  if (inc_l) {
-    cp_block(context->L1, context->L);
-    toggle_endian(context->L1); 
-  }
-
-  if (inc_j) {
-    cp_block(context->J1, context->J);
-    toggle_endian(context->J1); 
-  }
+  cp_block(context->L1, context->L);
+  toggle_endian(context->L1); 
 }
 
 
@@ -422,12 +409,11 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
   /* Preompute j*J's. */
   zero_block(context->Js[0]); 
   cp_block(context->Js[1], X[1]);
-  for (i = 0; i < 8; i++)
+  for (i = 0; i < 9; i++)
     dot_inc(context->Js, i); 
   
-  /* Doubling tweaks. */
+  /* Doubling tweak. */
   cp_block(context->L1, X[2]); 
-  cp_block(context->J1, X[1]); 
 
 #ifndef __USE_AES_NI
   zero_block(context->k0[0]); zero_block(context->k0[4]); 
@@ -477,15 +463,15 @@ void E(Block *Y, const Block X, int i, int j, Context *context)
 
   else if (i >= 3 && j >= 1)
   {
+    /* The J-tweak is mixed in hash(). */ 
     xor_block(*Y, X, context->Js[j % 8]); 
     xor_block(*Y, *Y, context->L1);
-    xor_block(*Y, *Y, context->J1);
     aes4_0(Y, *Y, context); 
   }
 
   else if (i >= 3 && j == 0)
-  {
-    xor_block(*Y, X, context->J1);
+  { 
+    /* The J-tweak is mixed in hash(). */ 
     aes4_0(Y, *Y, context); 
   }
 
@@ -502,22 +488,26 @@ void hash(Byte *delta, Byte *tags [],
 {
   unsigned i, j, k, m; 
   Block H, X; 
-  zero_block(H); 
+  zero_block(H);
+
+  Block *offset = (Block *)malloc(sizeof(Block) * (num_tags + 2)); 
+  zero_block(offset[0]); cp_block(offset[1], context->Js[8]);  
 
   for (i = 0; i < num_tags; i++)
   {
+    dot_inc(offset, i+2); 
     m = tag_bytes[i] / 16; 
     if (tag_bytes[i] % 16 > 0) m++; 
     m = max(m, 1); 
     
-    k = 0; update(context, 0, 1); 
+    k = 0; 
     for (j = 1; j < m; j++)
     {
       load_block(X, &tags[i][k]); k += 16;
+      xor_block(X, X, offset[i+1]); 
       E(&X, X, 3+i, j, context);
-      printf("%d, %d\n", 3+i, j); 
       xor_block(H, H, X); 
-      update(context, j % 8 == 0, 0);  
+      update(context, j % 8 == 0);  
     } // Full blocks
     
     j = tag_bytes[i] % 16; 
@@ -532,14 +522,15 @@ void hash(Byte *delta, Byte *tags [],
       j = m; 
     }
     
-    printf("%d, %d .\n", 3+i, j); 
+    xor_block(X, X, offset[i+1]); 
     E(&X, X, 3+i, j, context); 
     xor_block(H, H, X); 
-    reset(context, 1, 0); 
+    reset(context); 
   } // Each tag
-    
+  
+  free(offset); 
   cp_bytes(delta, H.byte, 16);
-  reset(context, 1, 1); 
+  reset(context); 
 } // hash()
 
 
@@ -554,21 +545,20 @@ void hash(Byte *delta, Byte *tags [],
 static void display_context(Context *context)
 {
   unsigned i; 
-  printf("+----------------------------------------------------+\n"); 
+  printf("+---------------------------------------------------+\n"); 
   printf("| I   = "); display_block(context->I);  printf("|\n"); 
   printf("| J   = "); display_block(context->J);  printf("|\n"); 
-  printf("| J'  = "); display_block(context->J1); printf("|\n"); 
   printf("| L   = "); display_block(context->L);  printf("|\n"); 
   printf("| L'  = "); display_block(context->L1); printf("|\n"); 
 
-  for (i = 0; i < 8; i++)
+  for (i = 0; i < 9; i++)
   {
     printf("| %d*J = ", i); 
     display_block(context->Js[i]); 
     printf("|\n"); 
   }
 
-  printf("+----------------------------------------------------+\n"); 
+  printf("+---------------------------------------------------+\n"); 
 }
 
 int main()
@@ -577,11 +567,11 @@ int main()
   Block res; 
   Byte key [] = "This is a really great key.";
   Byte nonce [] = "Celebraties are awesome"; 
-  Byte msg [] = "This is a great This is a great. sdkjf"; 
+  Byte msg [] = "This i a great This is a great. sdkjf"; 
   unsigned key_bytes = strlen((const char *)key); 
   unsigned nonce_bytes = strlen((const char *)nonce); 
   unsigned msg_bytes = strlen((const char *)msg); 
-  unsigned tau = 0; 
+  unsigned tau = 2;
 
   Context context;
   extract(&context, key, key_bytes);
@@ -591,7 +581,7 @@ int main()
   Block guy; zero_block(guy); 
   guy.word[3] = reverse_u32(tau);
 
-
+ 
   Byte *tags [3]; tags[0] = guy.byte; tags[1] = nonce; tags[2] = msg; 
   unsigned tag_bytes [] = {16, nonce_bytes, msg_bytes}; 
   unsigned num_tags = 3; 
@@ -600,25 +590,24 @@ int main()
   display_block(res); printf("\n");  
 
 
-  /* 
-   * TODO Test the blockcipher for i>2,j>0 and i>2,j=0.    
-   */
-
   //display_context(&context);
 
-  //Block M, C;
-  //zero_block(M);
-  //zero_block(C);
-  //M.byte[1] = 2;
-  //display_block(M); printf("Sane? \n");
-  //int i = 2; 
-  //for (int j = 1; j < 100; j++)
-  //{
-  //  E(&C, M, i, j, &context);
-  //  printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
-  //  update(&context, j % 8 == 0, 0); 
-  //}
-  //reset(&context, 1, 0); 
+  //  Block M, C;
+  //  zero_block(M);
+  //  zero_block(C);
+  //  M.byte[1] = 2;
+  //  display_block(M); printf("Sane? \n");
+  //  Block fella [99]; 
+  //  zero_block(fella[0]);
+  //  cp_block(fella[1], context.Js[8]);
+  //  int j = 0;
+  //  for (int i = 2; i < 99; i++)
+  //  {
+  //    dot_inc(fella, i); 
+  //    xor_block(C, M, fella[i-1]); 
+  //    E(&C, C, i+1, j, &context);
+  //    printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
+  //  }
   
 
 
