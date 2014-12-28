@@ -64,16 +64,16 @@ typedef union {
 
 typedef struct {
 
-  /* Key schedules for software AES code. There is probably a way to 
-   * do this without explicitly laying out each key schedule. */ 
+  /* TODO What about laying a schedule like 0,I,0,J,0,L? */ 
 #ifndef __USE_AES_NI
   Block k0[5], k1[5], k2[5], K[11];
 #endif
 
-  /* Tweaks, key. */
+  /* Tweaks, key. TODO Just keep even J offsets. */
   Block I, L, L1, J, Js [9]; 
 
 } Context; 
+
 
 static void display_block(const Block X)
 {
@@ -319,8 +319,7 @@ static void dot_inc(Block *Xs, int n)
 }
 
 /*
- * Update doubling tweak `T` if necessary. `i` doesn't actually
- * have an affect on the tweak. 
+ * Update doubling tweak `L`. 
  */
 static void update(Context *context, int inc_l) 
 {
@@ -491,6 +490,7 @@ void hash(Byte *delta, Byte *tags [],
   Block H, X; 
   zero_block(H);
 
+  /* TODO This might slow things down ... */ 
   Block *offset = (Block *)malloc(sizeof(Block) * (num_tags + 2)); 
   zero_block(offset[0]); cp_block(offset[1], context->Js[8]);  
 
@@ -564,6 +564,125 @@ void prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [],
 
 
 
+/* ----- AEZ-core. --------------------------------------------------------- */
+
+void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
+      unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
+{
+  Block Delta, X, Y, S, Sx, Sy, Mx, My, Mu, Mv, A, B, C; 
+ 
+  const unsigned m = (bytes / 32) - 1; // No. i-blocks. 
+  const unsigned d = bytes % 32; // Length of uv-block.
+  unsigned i, j; 
+
+  hash(Delta.byte, tags, num_tags, tag_bytes, context); 
+  
+  /* First pass. */ 
+  zero_block(X);
+
+  /* i-blocks */ 
+  for (j = 1, i = 0; j <= m; j++)
+  {
+    load_block(A, &in[i + 16]); 
+    E(&A, A, 1, j, context); 
+    xor_bytes(A.byte, A.byte, &in[i], 16); 
+    store_block(&out[i+16], A); // Wi
+    E(&A, A, 0, 0, context);  
+    xor_bytes(A.byte, A.byte, &in[i + 16], 16); 
+    store_block(&out[i], A); // Xi
+    xor_block(X, X, A); 
+    update(context, j % 8 == 0); i += 32; 
+  }
+  reset(context); 
+
+  /* uv-block */ 
+  zero_block(Mu); zero_block(Mv);
+  if (d < 16) 
+  {
+    cp_bytes(Mu.byte, &in[bytes - 32 - d], d);
+    Mu.byte[d] = 0x80; // Mu
+    E(&A, Mu, 0, 4, context); 
+    xor_block(X, X, A); 
+  } 
+  else if (d < 32) 
+  {
+    load_block(Mu, &in[bytes - 32 - d]); 
+    E(&A, Mu, 0, 4, context); // Mu
+    xor_block(X, X, A); 
+    cp_bytes(Mv.byte, &in[bytes - 16 - d], d - 16);
+    Mv.byte[d - 16] = 0x80; 
+    E(&A, Mv, 0, 5, context); // Mv 
+    xor_block(X, X, A); 
+  }
+
+  /* xy-block, S */ 
+  load_block(Mx, &in[bytes - 32]);
+  load_block(My, &in[bytes - 16]); 
+  E(&Sx, My, 0, 1 + inv, context);
+  xor_block(Sx, Sx, X); 
+  xor_block(Sx, Sx, Delta); 
+  xor_block(Sx, Sx, Mx);
+  E(&Sy, Sx, -1, 1 + inv, context); 
+  xor_block(Sy, Sy, My); 
+  xor_block(S, Sx, Sy); 
+  
+  /* Second pass. */ 
+  zero_block(Y);
+  
+  /* i-blocks */ 
+  for (j = 1, i = 0; j <= m; j++)
+  {
+    E(&A, S, 2, j, context); cp_block(B, A); // S'
+    xor_bytes(A.byte, &out[i+16]/* Wi */, A.byte, 16); // Yi
+    xor_block(Y, Y, A);
+    xor_bytes(B.byte, &out[i]/* Xi */, B.byte, 16); // Zi
+    E(&C, B, 0, 0, context); xor_block(C, C, A); // Ci'
+    E(&A, C, 1, j, context); 
+    xor_bytes(&out[i], B.byte, A.byte, 16); 
+    store_block(&out[i+16], C); 
+    update(context, j % 8 == 0); i += 32; 
+  }
+  reset(context); 
+  
+  /* uv-block */
+  if (d < 16) 
+  {
+    E(&A, S, -1, 4, context); 
+    xor_block(Mu, Mu, A); zero_block(A); 
+    cp_bytes(&out[bytes - 32 - d], Mu.byte, d); // Cu 
+    cp_bytes(A.byte, Mu.byte, d); A.byte[d] = 0x80;
+    E(&A, A, 0, 4, context); 
+    xor_block(Y, Y, A); // Yu
+  }
+  else if (d < 32)
+  {
+    E(&A, S, -1, 4, context); 
+    xor_block(Mu, Mu, A); 
+    store_block(&out[bytes - 32 - d], Mu); // Cu
+    E(&A, Mu, 0, 4, context); 
+    xor_block(Y, Y, A); // Yu
+    E(&A, S, -1, 5, context);
+    xor_block(Mv, Mv, A); zero_block(A); 
+    cp_bytes(&out[bytes - 16 - d], Mv.byte, d - 16); // Cv
+    cp_bytes(A.byte, Mv.byte, d - 16); A.byte[d - 16] = 0x80; 
+    E(&A, A, 0, 5, context);
+    xor_block(Y, Y, A); // Yv
+  }
+
+  /* xy-block */ 
+  E(&A, Sy, -1, 2 - inv, context); 
+  xor_block(A, A, Sx); // Cy
+  store_block(&out[bytes - 16], A); 
+  E(&A, A, 0, 2 - inv, context);
+  xor_block(A, A, Y); 
+  xor_block(A, A, Delta); 
+  xor_block(A, A, Sy); 
+  store_block(&out[bytes - 32], A); 
+
+
+
+} // encipher()
+
 
 /* ----- Testing, testing ... ---------------------------------------------- */
 
@@ -592,32 +711,49 @@ static void display_context(Context *context)
 int main()
 {
   
-  Byte res [256]; memset(res, 0, 256); 
   Byte key [] = "This is a really great key.";
   Byte nonce [] = "Celebraties are awesome"; 
-  Byte msg [] = "This i a great This is a great. sdkjf"; 
+  Byte msg [256]; memset(msg, 0, 256); 
+  Byte ciphertext [256]; memset(ciphertext, 0, 256); 
+  Byte plaintext [256]; memset(plaintext, 0, 256); 
+  strcpy((char *)msg, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefshit"); 
   unsigned key_bytes = strlen((const char *)key); 
   unsigned nonce_bytes = strlen((const char *)nonce); 
   unsigned msg_bytes = strlen((const char *)msg); 
-  unsigned tau = 2;
+  unsigned tau = 16;
 
   Context context;
   extract(&context, key, key_bytes);
   
-
-
   Block guy; zero_block(guy); 
   guy.word[3] = reverse_u32(tau);
-
- 
   Byte *tags [3]; tags[0] = guy.byte; tags[1] = nonce; tags[2] = msg; 
   unsigned tag_bytes [] = {16, nonce_bytes, msg_bytes}; 
   unsigned num_tags = 3; 
     
-  prf(res, tags, num_tags, tag_bytes, 4, &context); 
-  display_block(*(Block *)&res[0]); printf("\n");  
-  display_block(*(Block *)&res[16]); printf("\n");  
+  encipher(ciphertext, msg, msg_bytes, tags, num_tags, tag_bytes, &context, 0); 
+  encipher(plaintext, ciphertext, msg_bytes, tags, num_tags, tag_bytes, &context, 1); 
+  
+  printf("Message\n");
+  display_block(*(Block *)&msg[0]); printf("\n");  
+  display_block(*(Block *)&msg[16]); printf("\n");  
+  display_block(*(Block *)&msg[32]); printf("\n");  
+  display_block(*(Block *)&msg[48]); printf("\n");  
+  display_block(*(Block *)&msg[64]); printf("\n");  
+  
+  printf("Plaintext\n");
+  display_block(*(Block *)&plaintext[0]); printf("\n");  
+  display_block(*(Block *)&plaintext[16]); printf("\n");  
+  display_block(*(Block *)&plaintext[32]); printf("\n");  
+  display_block(*(Block *)&plaintext[48]); printf("\n");  
+  display_block(*(Block *)&plaintext[64]); printf("\n");  
 
+  printf("Ciphertext\n");
+  display_block(*(Block *)&ciphertext[0]); printf("\n");  
+  display_block(*(Block *)&ciphertext[16]); printf("\n");  
+  display_block(*(Block *)&ciphertext[32]); printf("\n");  
+  display_block(*(Block *)&ciphertext[48]); printf("\n");  
+  display_block(*(Block *)&ciphertext[64]); printf("\n");  
 
   //display_context(&context);
 
