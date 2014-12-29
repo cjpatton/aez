@@ -597,14 +597,14 @@ void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 
   /* uv-block */ 
   zero_block(Mu); zero_block(Mv);
-  if (d < 16) 
+  if (0 < d && d < 16) 
   {
     cp_bytes(Mu.byte, &in[bytes - 32 - d], d);
     Mu.byte[d] = 0x80; // Mu
     E(&A, Mu, 0, 4, context); 
     xor_block(X, X, A); 
   } 
-  else if (d < 32) 
+  else if (0 < d && d < 32) 
   {
     load_block(Mu, &in[bytes - 32 - d]); 
     E(&A, Mu, 0, 4, context); // Mu
@@ -645,7 +645,7 @@ void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   reset(context); 
   
   /* uv-block */
-  if (d < 16) 
+  if (0 < d && d < 16) 
   {
     E(&A, S, -1, 4, context); 
     xor_block(Mu, Mu, A); zero_block(A); 
@@ -654,7 +654,7 @@ void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
     E(&A, A, 0, 4, context); 
     xor_block(Y, Y, A); // Yu
   }
-  else if (d < 32)
+  else if (0 < d && d < 32)
   {
     E(&A, S, -1, 4, context); 
     xor_block(Mu, Mu, A); 
@@ -711,15 +711,14 @@ static void display_context(Context *context)
 int main()
 {
   
+  unsigned msg_bytes = 5000; 
   Byte key [] = "This is a really great key.";
   Byte nonce [] = "Celebraties are awesome"; 
-  Byte msg [256]; memset(msg, 0, 256); 
-  Byte ciphertext [256]; memset(ciphertext, 0, 256); 
-  Byte plaintext [256]; memset(plaintext, 0, 256); 
-  strcpy((char *)msg, "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdefshit"); 
+  Byte msg [msg_bytes]; memset(msg, 0, msg_bytes); 
+  Byte ciphertext [msg_bytes]; memset(ciphertext, 0, msg_bytes); 
+  Byte plaintext [msg_bytes]; memset(plaintext, 0, msg_bytes); 
   unsigned key_bytes = strlen((const char *)key); 
   unsigned nonce_bytes = strlen((const char *)nonce); 
-  unsigned msg_bytes = strlen((const char *)msg); 
   unsigned tau = 16;
 
   Context context;
@@ -730,30 +729,19 @@ int main()
   Byte *tags [3]; tags[0] = guy.byte; tags[1] = nonce; tags[2] = msg; 
   unsigned tag_bytes [] = {16, nonce_bytes, msg_bytes}; 
   unsigned num_tags = 3; 
-    
+  
   encipher(ciphertext, msg, msg_bytes, tags, num_tags, tag_bytes, &context, 0); 
   encipher(plaintext, ciphertext, msg_bytes, tags, num_tags, tag_bytes, &context, 1); 
-  
-  printf("Message\n");
-  display_block(*(Block *)&msg[0]); printf("\n");  
-  display_block(*(Block *)&msg[16]); printf("\n");  
-  display_block(*(Block *)&msg[32]); printf("\n");  
-  display_block(*(Block *)&msg[48]); printf("\n");  
-  display_block(*(Block *)&msg[64]); printf("\n");  
-  
-  printf("Plaintext\n");
-  display_block(*(Block *)&plaintext[0]); printf("\n");  
-  display_block(*(Block *)&plaintext[16]); printf("\n");  
-  display_block(*(Block *)&plaintext[32]); printf("\n");  
-  display_block(*(Block *)&plaintext[48]); printf("\n");  
-  display_block(*(Block *)&plaintext[64]); printf("\n");  
 
-  printf("Ciphertext\n");
-  display_block(*(Block *)&ciphertext[0]); printf("\n");  
-  display_block(*(Block *)&ciphertext[16]); printf("\n");  
-  display_block(*(Block *)&ciphertext[32]); printf("\n");  
-  display_block(*(Block *)&ciphertext[48]); printf("\n");  
-  display_block(*(Block *)&ciphertext[64]); printf("\n");  
+  Byte checksum [16]; 
+  memset(checksum, 0, 16); 
+  for (int i = 0; i < msg_bytes; i += 16)
+    xor_bytes(checksum, checksum, &plaintext[i], 16); 
+  display_block(*(Block *)plaintext); printf("\n"); 
+  memset(checksum, 0, 16); 
+  for (int i = 0; i < msg_bytes; i += 16)
+    xor_bytes(checksum, checksum, &ciphertext[i], 16); 
+  display_block(*(Block *)ciphertext); printf("\n"); 
 
   //display_context(&context);
 
