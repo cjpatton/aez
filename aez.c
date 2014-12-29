@@ -813,8 +813,9 @@ int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
   unsigned tag_bytes [MAX_DATA + 2]; 
   Byte *tags [MAX_DATA + 2]; 
   Byte *X = malloc((msg_bytes + auth_bytes) * sizeof(Byte)); 
-  Block tau; tau.word[3] = reverse_u32(auth_bytes);
   
+  Block tau; zero_block(tau); 
+  tau.word[3] = reverse_u32(auth_bytes);
   tags[0] = tau.byte; tag_bytes[0] = 16; 
   tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
   for (int i = 0; i < num_data; i++) 
@@ -845,8 +846,9 @@ int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
   unsigned tag_bytes [MAX_DATA + 2]; 
   Byte *tags [MAX_DATA + 2]; 
   Byte *X = malloc(msg_bytes * sizeof(Byte)); 
-  
-  Block tau; tau.word[3] = reverse_u32(auth_bytes);
+ 
+  Block tau; zero_block(tau); 
+  tau.word[3] = reverse_u32(auth_bytes);
   tags[0] = tau.byte; tag_bytes[0] = 16; 
   tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
   for (i = 0; i < num_data; i++) 
@@ -854,7 +856,7 @@ int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
     tags[i+2] = A[i]; tag_bytes[i+2] = data_bytes[i];
   }
   
-  if (msg_bytes == 0)
+  if (msg_bytes == auth_bytes)
   {
     prf(X, tags, num_data + 2, tag_bytes, auth_bytes, context); 
     for (i = 0; i < msg_bytes; i++)
@@ -986,6 +988,6 @@ void verify()
 int main()
 {
   verify(); 
-  //benchmark(); 
+  benchmark(); 
   return 0; 
 }
