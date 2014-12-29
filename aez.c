@@ -490,13 +490,11 @@ void E(Block *Y, const Block X, int i, int j, Context *context)
     aes4_0(Y, *Y, context); 
   }
 
-  else if (i >= 3 && j == 0)
+  else
   { 
     /* The J-tweak is mixed in hash(). */ 
     aes4_0(Y, *Y, context); 
   }
-
-  else { printf("Uh Oh!!!\n"); assert(0); } /* FIXME */
 
 } // E()
 
@@ -812,10 +810,9 @@ int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
 {
   unsigned tag_bytes [MAX_DATA + 2]; 
   Byte *tags [MAX_DATA + 2]; 
-  Byte *X = malloc((msg_bytes + auth_bytes) * sizeof(Byte)); 
-  
+ 
   Block tau; zero_block(tau); 
-  tau.word[3] = reverse_u32(auth_bytes);
+  tau.word[3] = reverse_u32(auth_bytes*8); /* TODO doesn't match spec */ 
   tags[0] = tau.byte; tag_bytes[0] = 16; 
   tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
   for (int i = 0; i < num_data; i++) 
@@ -828,12 +825,13 @@ int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
 
   else 
   {
+    Byte *X = malloc((msg_bytes + auth_bytes) * sizeof(Byte)); 
     memcpy(X, M, msg_bytes); memset(&X[msg_bytes], 0, auth_bytes); 
     encipher(C, X, msg_bytes + auth_bytes,
                             tags, num_data + 2, tag_bytes, context, 0); 
+    free(X);
   }
 
-  free(X);
   return 0; 
 } // encrypt()
 
@@ -848,7 +846,7 @@ int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
   Byte *X = malloc(msg_bytes * sizeof(Byte)); 
  
   Block tau; zero_block(tau); 
-  tau.word[3] = reverse_u32(auth_bytes);
+  tau.word[3] = reverse_u32(auth_bytes*8); /* TODO doesn't match spec */ 
   tags[0] = tau.byte; tag_bytes[0] = 16; 
   tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
   for (i = 0; i < num_data; i++) 
@@ -988,6 +986,6 @@ void verify()
 int main()
 {
   verify(); 
-  benchmark(); 
+  //benchmark(); 
   return 0; 
 }
