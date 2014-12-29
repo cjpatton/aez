@@ -68,12 +68,12 @@ typedef struct {
 
   /* TODO What about laying a schedule like 0,I,0,J,0,L? */ 
 #ifndef __USE_AES_NI
-  Block k0[5], k1[5], k2[5], K[11];
+  Block k0[5], k1[5], k2[5], Klong[11];
 #endif
 
   /* Tweaks, key. TODO Store 2*J, 4*J, 8*J, and 16*J. */
-  Block I, L, L1, J, Js [9]; 
-
+  Block K[4], L1, Js [9]; 
+  // K[0]=I, K[1]=L, K[2]=J, K[3]=Zero
 } Context; 
 
 
@@ -87,9 +87,9 @@ static void display_context(Context *context)
 {
   unsigned i; 
   printf("+---------------------------------------------------+\n"); 
-  printf("| I   = "); display_block(context->I);  printf("|\n"); 
-  printf("| J   = "); display_block(context->J);  printf("|\n"); 
-  printf("d| L   = "); display_block(context->L);  printf("|\n"); 
+  printf("| I   = "); display_block(context->K[0]);  printf("|\n"); 
+  printf("| J   = "); display_block(context->K[2]);  printf("|\n"); 
+  printf("d| L   = "); display_block(context->K[1]);  printf("|\n"); 
   printf("| L'  = "); display_block(context->L1); printf("|\n"); 
 
   for (i = 0; i < 9; i++)
@@ -217,67 +217,29 @@ static void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
 
 /* ----- AES calls. -------------------------------------------------------- */
 
-
-/* AES10. */ 
-void aes10(Block *Y, Block X, Context *context) 
-{
 #ifdef __USE_AES_NI
-  X.block = _mm_aesenc_si128(X.block, context->I.block);
-  X.block = _mm_aesenc_si128(X.block, context->L.block);
-  X.block = _mm_aesenc_si128(X.block, context->J.block);
-  X.block = _mm_aesenc_si128(X.block, context->I.block);
-  X.block = _mm_aesenc_si128(X.block, context->L.block);
-  X.block = _mm_aesenc_si128(X.block, context->J.block);
-  X.block = _mm_aesenc_si128(X.block, context->I.block);
-  X.block = _mm_aesenc_si128(X.block, context->L.block);
-  X.block = _mm_aesenc_si128(X.block, context->J.block);
-  Y->block = _mm_aesenc_si128(X.block, context->I.block);
-#else
-  cp_block(*Y, X); 
-  rijndaelEncryptRound((uint32_t *)context->K, 11, Y->byte, 10); 
-#endif
-} 
-
-/*  AES4. */ 
-void aes4_0(Block *Y, Block X, Context *context) 
+static __m128i aes(__m128i M, __m128i K[])
 {
-#ifdef __USE_AES_NI
-  X.block = _mm_aesenc_si128(X.block, context->I.block);
-  X.block = _mm_aesenc_si128(X.block, context->J.block); 
-  X.block = _mm_aesenc_si128(X.block, context->L.block); 
-  Y->block = _mm_aesenc_si128(X.block, _mm_setzero_si128());
-#else
-  cp_block(*Y, X); 
-  rijndaelEncryptRound((uint32_t *)context->k0, 10, Y->byte, 4);  
-#endif
+  M = _mm_aesenc_si128(M, K[0]);
+  M = _mm_aesenc_si128(M, K[1]);
+  M = _mm_aesenc_si128(M, K[2]);
+  M = _mm_aesenc_si128(M, K[0]);
+  M = _mm_aesenc_si128(M, K[1]);
+  M = _mm_aesenc_si128(M, K[2]);
+  M = _mm_aesenc_si128(M, K[0]);
+  M = _mm_aesenc_si128(M, K[1]);
+  M = _mm_aesenc_si128(M, K[2]);
+  return _mm_aesenc_si128(M, K[0]);
+}
 
-} 
-
-void aes4_1(Block *Y, Block X, Context *context) 
+static __m128i aes4(__m128i M, __m128i K[], int a, int b, int c, int d)
 {
-#ifdef __USE_AES_NI
-  X.block = _mm_aesenc_si128(X.block, context->J.block);
-  X.block = _mm_aesenc_si128(X.block, context->L.block); 
-  X.block = _mm_aesenc_si128(X.block, context->I.block); 
-  Y->block = _mm_aesenc_si128(X.block, _mm_setzero_si128());
-#else
-  cp_block(*Y, X); 
-  rijndaelEncryptRound((uint32_t *)context->k1, 10, Y->byte, 4);  
+  M = _mm_aesenc_si128(M, K[a]);
+  M = _mm_aesenc_si128(M, K[b]);
+  M = _mm_aesenc_si128(M, K[c]);
+  return _mm_aesenc_si128 (M, K[d]);
+}
 #endif
-} 
-
-void aes4_2(Block *Y, Block X, Context *context) 
-{
-#ifdef __USE_AES_NI
-  X.block = _mm_aesenc_si128(X.block, context->L.block); 
-  X.block = _mm_aesenc_si128(X.block, context->I.block); 
-  X.block = _mm_aesenc_si128(X.block, context->J.block); 
-  Y->block = _mm_aesenc_si128(X.block, context->I.block); 
-#else
-  cp_block(*Y, X); 
-  rijndaelEncryptRound((uint32_t *)context->k2, 10, Y->byte, 4);  
-#endif
-} 
 
 void aes4_short(Block *Y, Block X, const Block K) 
 {
@@ -353,7 +315,7 @@ static void update(Context *context, int inc_l)
  */
 static void reset(Context *context)
 {
-  cp_block(context->L1, context->L);
+  cp_block(context->L1, context->K[1]);
   toggle_endian(context->L1); 
 }
 
@@ -422,9 +384,10 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
   }
 
   /* Set up key schedule and tweak context. */
-  cp_block(context->I, X[0]); toggle_endian(context->I); 
-  cp_block(context->J, X[1]); toggle_endian(context->J); 
-  cp_block(context->L, X[2]); toggle_endian(context->L);
+  cp_block(context->K[0], X[0]); toggle_endian(context->K[0]); 
+  cp_block(context->K[2], X[1]); toggle_endian(context->K[2]); 
+  cp_block(context->K[1], X[2]); toggle_endian(context->K[1]);
+  zero_block(context->K[3]); 
 
   /* Preompute j*J's. */
   zero_block(context->Js[0]); 
@@ -438,20 +401,20 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
 #ifndef __USE_AES_NI
   zero_block(context->k0[0]); zero_block(context->k0[4]); 
   zero_block(context->k1[0]); zero_block(context->k1[4]); 
-  zero_block(context->k2[0]); zero_block(context->K[0]); 
+  zero_block(context->k2[0]); zero_block(context->Klong[0]); 
 
-  cp_block(context->k0[2], context->J); cp_block(context->k1[1], context->J); 
-  cp_block(context->k2[3], context->J); cp_block(context->K[3], context->J);
-  cp_block(context->K[6], context->J);  cp_block(context->K[9], context->J);
+  cp_block(context->k0[2], context->K[2]); cp_block(context->k1[1], context->K[2]); 
+  cp_block(context->k2[3], context->K[2]); cp_block(context->Klong[3], context->K[2]);
+  cp_block(context->Klong[6], context->K[2]);  cp_block(context->Klong[9], context->K[2]);
 
-  cp_block(context->k0[1], context->I); cp_block(context->k1[3], context->I); 
-  cp_block(context->k2[2], context->I); cp_block(context->k2[4], context->I); 
-  cp_block(context->K[1], context->I);  cp_block(context->K[4], context->I);
-  cp_block(context->K[7], context->I);  cp_block(context->K[10], context->I);
+  cp_block(context->k0[1], context->K[0]); cp_block(context->k1[3], context->K[0]); 
+  cp_block(context->k2[2], context->K[0]); cp_block(context->k2[4], context->K[0]); 
+  cp_block(context->Klong[1], context->K[0]);  cp_block(context->Klong[4], context->K[0]);
+  cp_block(context->Klong[7], context->K[0]);  cp_block(context->Klong[10], context->K[0]);
 
-  cp_block(context->k0[3], context->L); cp_block(context->k1[2], context->L); 
-  cp_block(context->k2[1], context->L); cp_block(context->K[2], context->L);
-  cp_block(context->K[5], context->L);  cp_block(context->K[8], context->L);
+  cp_block(context->k0[3], context->K[1]); cp_block(context->k1[2], context->K[1]); 
+  cp_block(context->k2[1], context->K[1]); cp_block(context->Klong[2], context->K[1]);
+  cp_block(context->Klong[5], context->K[1]);  cp_block(context->Klong[8], context->K[1]);
 #endif
 
 } // extract()
@@ -460,40 +423,76 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
 
 /* ---- AEZ Tweakable blockcipher. ----------------------------------------- */
 
-void E(Block *Y, const Block X, int i, int j, Context *context)
+void E(Block *Y, Block X, int i, int j, Context *context)
 {
   if (i == -1 && 0 <= j && j <= 7)
   {
-    xor_block(*Y, X, context->Js[j]);
-    aes10(Y, *Y, context); 
+    xor_block(X, X, context->Js[j]);
+#ifdef __USE_AES_NI
+    Y->block = aes(X.block, (__m128i *)context->K); 
+#else 
+    rijndaelEncryptRound((uint32_t *)context->Klong, 11, X.byte, 10); 
+    cp_block(*Y, X); 
+#endif 
   }
 
   else if (i == 0 && 0 <= j && j <= 7)
   {
-    xor_block(*Y, X, context->Js[j]);
-    aes4_0(Y, *Y, context); 
+    xor_block(X, X, context->Js[j]);
+#ifdef __USE_AES_NI
+    Y->block = aes4(X.block, (__m128i *)context->K, 0, 2, 1, 3); 
+#else
+    rijndaelEncryptRound((uint32_t *)context->k0, 10, X.byte, 4);  
+    cp_block(*Y, X); 
+#endif
   }
 
   else if (1 <= i && i <= 2 && j >= 1)
   {
-    xor_block(*Y, X, context->Js[j % 8]);
-    xor_block(*Y, *Y, context->L1);
-    if (i == 1) aes4_1(Y, *Y, context); 
-    else        aes4_2(Y, *Y, context); 
+    xor_block(X, X, context->Js[j % 8]);
+    xor_block(X, X, context->L1);
+    if (i == 1)
+    {
+#ifdef __USE_AES_NI
+      Y->block = aes4(X.block, (__m128i *)context->K, 2, 1, 0, 3);
+#else
+      rijndaelEncryptRound((uint32_t *)context->k1, 10, X.byte, 4);  
+      cp_block(*Y, X); 
+#endif
+    }
+    else
+    { 
+#ifdef __USE_AES_NI
+      Y->block = aes4(X.block, (__m128i *)context->K, 1, 0, 2, 0);
+#else
+      rijndaelEncryptRound((uint32_t *)context->k2, 10, X.byte, 4);  
+      cp_block(*Y, X); 
+#endif
+    }
   }
 
   else if (i >= 3 && j >= 1)
   {
     /* The J-tweak is mixed in hash(). */ 
-    xor_block(*Y, X, context->Js[j % 8]); 
-    xor_block(*Y, *Y, context->L1);
-    aes4_0(Y, *Y, context); 
+    xor_block(X, X, context->Js[j % 8]); 
+    xor_block(X, X, context->L1);
+#ifdef __USE_AES_NI
+    Y->block = aes4(X.block, (__m128i *)context->K, 0, 2, 1, 3);
+#else
+    rijndaelEncryptRound((uint32_t *)context->k0, 10, X.byte, 4);  
+    cp_block(*Y, X); 
+#endif
   }
 
   else
   { 
     /* The J-tweak is mixed in hash(). */ 
-    aes4_0(Y, *Y, context); 
+#ifdef __USE_AES_NI
+    Y->block = aes4(X.block, (__m128i *)context->K, 0, 2, 1, 3);
+#else
+    rijndaelEncryptRound((uint32_t *)context->k0, 10, X.byte, 4);  
+    cp_block(*Y, X); 
+#endif
   }
 
 } // E()
@@ -717,7 +716,7 @@ void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   else {        j=6; rounds=8; }
     
   /* Split (bytes*8)/2 bits into L and R. Beware: inay end in nibble. */
-  memcpy(L, in,               (bytes+1)/2);
+  memcpy(L, in,           (bytes+1)/2);
   memcpy(R, in + bytes/2, (bytes+1)/2);
   
   /* inust shift R left by half a byte */
@@ -812,7 +811,7 @@ int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
   Byte *tags [MAX_DATA + 2]; 
  
   Block tau; zero_block(tau); 
-  tau.word[3] = reverse_u32(auth_bytes*8); /* TODO doesn't match spec */ 
+  tau.word[3] = reverse_u32(auth_bytes*8); 
   tags[0] = tau.byte; tag_bytes[0] = 16; 
   tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
   for (int i = 0; i < num_data; i++) 
@@ -846,7 +845,7 @@ int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
   Byte *X = malloc(msg_bytes * sizeof(Byte)); 
  
   Block tau; zero_block(tau); 
-  tau.word[3] = reverse_u32(auth_bytes*8); /* TODO doesn't match spec */ 
+  tau.word[3] = reverse_u32(auth_bytes*8); 
   tags[0] = tau.byte; tag_bytes[0] = 16; 
   tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
   for (i = 0; i < num_data; i++) 
@@ -986,6 +985,6 @@ void verify()
 int main()
 {
   verify(); 
-  //benchmark(); 
+  benchmark(); 
   return 0; 
 }
