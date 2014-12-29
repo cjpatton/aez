@@ -37,6 +37,7 @@
 #include <tmmintrin.h>
 #endif 
 
+#define MAX_DATA 3 /* Maximum length of additional data vector. */ 
 #define INVALID -1 /* Reject plaintext (inauthentic). */ 
 
 /* AES input/output/keys are block aligned in order to support AES-NI. */ 
@@ -80,6 +81,25 @@ static void display_block(const Block X)
 {
   for (int i = 0; i < 4; i ++)
     printf("0x%08x ", X.word[i]); 
+}
+
+static void display_context(Context *context)
+{
+  unsigned i; 
+  printf("+---------------------------------------------------+\n"); 
+  printf("| I   = "); display_block(context->I);  printf("|\n"); 
+  printf("| J   = "); display_block(context->J);  printf("|\n"); 
+  printf("d| L   = "); display_block(context->L);  printf("|\n"); 
+  printf("| L'  = "); display_block(context->L1); printf("|\n"); 
+
+  for (i = 0; i < 9; i++)
+  {
+    printf("| %d*J = ", i); 
+    display_block(context->Js[i]); 
+    printf("|\n"); 
+  }
+
+  printf("+---------------------------------------------------+\n"); 
 }
 
 
@@ -476,7 +496,7 @@ void E(Block *Y, const Block X, int i, int j, Context *context)
     aes4_0(Y, *Y, context); 
   }
 
-  else { printf("Uh Oh!!!\n"); assert(0); }
+  else { printf("Uh Oh!!!\n"); assert(0); } /* FIXME */
 
 } // E()
 
@@ -491,8 +511,7 @@ void hash(Byte *delta, Byte *tags [],
   Block H, X; 
   zero_block(H);
 
-  /* TODO This might slow things down ... */ 
-  Block *offset = (Block *)malloc(sizeof(Block) * (num_tags + 2)); 
+  Block offset [MAX_DATA + 4]; 
   zero_block(offset[0]); cp_block(offset[1], context->Js[8]);  
 
   for (i = 0; i < num_tags; i++)
@@ -530,7 +549,6 @@ void hash(Byte *delta, Byte *tags [],
     reset(context); 
   } // Each tag
   
-  free(offset); 
   cp_bytes(delta, H.byte, 16);
   reset(context); 
 } // hash()
@@ -567,7 +585,7 @@ void prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [],
 
 /* ----- AEZ-core. --------------------------------------------------------- */
 
-void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
+void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
 {
   Block Delta, X, Y, S, Sx, Sy, Mx, My, Mu, Mv, A, B, C; 
@@ -683,7 +701,7 @@ void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 
 
 
-/* ----- AEZ-tiny ---------------------------------------------------------- */
+/* ----- AEZ-tiny. --------------------------------------------------------- */
 
 void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
@@ -770,34 +788,107 @@ void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 } // encipher_tiny() 
 
 
+
+/* ----- AEZ encipher. ----------------------------------------------------- */
+
+void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
+      unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
+{
+  if (bytes < 32) 
+    encipher_tiny(out, in, bytes, tags, num_tags, tag_bytes, context, inv);
+
+  else 
+    encipher_core(out, in, bytes, tags, num_tags, tag_bytes, context, inv);
+
+} // encipher()
+
+
+
+/* ----- AEZ encrypt and decrypt. ------------------------------------------ */
+
+int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
+            Byte *A[], unsigned data_bytes[], unsigned num_data, 
+            unsigned auth_bytes, Context *context)
+{
+  unsigned tag_bytes [MAX_DATA + 2]; 
+  Byte *tags [MAX_DATA + 2]; 
+  Byte *X = malloc(max(msg_bytes + auth_bytes, 16) * sizeof(Byte)); 
+  Block tau; tau.word[3] = reverse_u32(auth_bytes);
+  
+  tags[0] = tau.byte; tag_bytes[0] = 16; 
+  tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
+  for (int i = 0; i < num_data; i++) 
+  {
+    tags[i+2] = A[i]; tag_bytes[i+2] = data_bytes[i];
+  }
+
+  if (msg_bytes == 0)
+    prf(C, tags, num_data + 2, tag_bytes, auth_bytes, context); 
+
+  else 
+  {
+    memcpy(X, M, msg_bytes); memset(&X[msg_bytes], 0, auth_bytes); 
+    encipher(C, X, msg_bytes + auth_bytes,
+                            tags, num_data + 2, tag_bytes, context, 0); 
+  }
+
+  free(X);
+  return 0; 
+} // encrypt()
+
+
+int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
+            Byte *A[], unsigned data_bytes[], unsigned num_data, 
+            unsigned auth_bytes, Context *context)
+{
+  int res = 0, i; 
+  unsigned tag_bytes [MAX_DATA + 2]; 
+  Byte *X = malloc(max(msg_bytes, 16) * sizeof(Byte)); 
+  Byte *tags [MAX_DATA + 2]; 
+  
+  Block tau; tau.word[3] = reverse_u32(auth_bytes);
+  tags[0] = tau.byte; tag_bytes[0] = 16; 
+  tags[1] = N;      ; tag_bytes[1] = nonce_bytes; 
+  for (i = 0; i < num_data; i++) 
+  {
+    tags[i+2] = A[i]; tag_bytes[i+2] = data_bytes[i];
+  }
+  
+  if (msg_bytes == 0)
+  {
+    prf(X, tags, num_data + 2, tag_bytes, auth_bytes, context); 
+    for (i = 0; i < msg_bytes; i++)
+      res |= X[i] != C[i];
+  }
+
+  else
+  {
+    encipher(X, C, msg_bytes, tags, num_data + 2, tag_bytes, context, 1);
+    for (i = msg_bytes - auth_bytes; i < msg_bytes; i++)
+      res |= X[i] != 0; 
+  }
+
+  if (res != INVALID)
+    memcpy(M, X, msg_bytes - auth_bytes); 
+
+  free(X); 
+  return (res ? INVALID : 0); 
+} // encrypt()
+            
+
+
+
+
+
 /* ----- Testing, testing ... ---------------------------------------------- */
 
 #include <time.h>
 #include <stdio.h>
 
-static void display_context(Context *context)
-{
-  unsigned i; 
-  printf("+---------------------------------------------------+\n"); 
-  printf("| I   = "); display_block(context->I);  printf("|\n"); 
-  printf("| J   = "); display_block(context->J);  printf("|\n"); 
-  printf("| L   = "); display_block(context->L);  printf("|\n"); 
-  printf("| L'  = "); display_block(context->L1); printf("|\n"); 
-
-  for (i = 0; i < 9; i++)
-  {
-    printf("| %d*J = ", i); 
-    display_block(context->Js[i]); 
-    printf("|\n"); 
-  }
-
-  printf("+---------------------------------------------------+\n"); 
-}
-
 int main()
 {
   
-  unsigned msg_bytes = 64; 
+  unsigned msg_bytes = 4096; 
   Byte key [] = "This is a really great key.";
   Byte nonce [] = "Celebraties are awesome"; 
   Byte msg [msg_bytes]; memset(msg, 0, msg_bytes); 
@@ -805,20 +896,23 @@ int main()
   Byte plaintext [msg_bytes]; memset(plaintext, 0, msg_bytes); 
   unsigned key_bytes = strlen((const char *)key); 
   unsigned nonce_bytes = strlen((const char *)nonce); 
-  unsigned tau = 16;
+  unsigned auth_bytes = 16;
 
-  msg_bytes = 29;
   Context context;
   extract(&context, key, key_bytes);
   
-  Block guy; zero_block(guy); 
-  guy.word[3] = reverse_u32(tau);
-  Byte *tags [3]; tags[0] = guy.byte; tags[1] = nonce; tags[2] = msg; 
-  unsigned tag_bytes [] = {16, nonce_bytes, msg_bytes}; 
-  unsigned num_tags = 3; 
+  Byte fella[] = "Guy"; 
+  Byte *data[] = {fella}; 
+  unsigned num_data [] = {strlen((const char *)data[0])}; 
+
+  encrypt(ciphertext, msg, msg_bytes, 
+          nonce, nonce_bytes, data, num_data, 1, auth_bytes, &context);
   
-  encipher_tiny(ciphertext, msg, msg_bytes, tags, num_tags, tag_bytes, &context, 0); 
-  encipher_tiny(plaintext, ciphertext, msg_bytes, tags, num_tags, tag_bytes, &context, 1); 
+  decrypt(plaintext, ciphertext, msg_bytes + auth_bytes, 
+          nonce, nonce_bytes, data, num_data, 1, auth_bytes, &context);
+
+  //encipher(ciphertext, msg, msg_bytes, tags, num_tags, tag_bytes, &context, 0); 
+  //encipher(plaintext, ciphertext, msg_bytes, tags, num_tags, tag_bytes, &context, 1); 
 
   Byte checksum [16]; 
   memset(checksum, 0, 16); 
