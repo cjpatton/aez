@@ -28,6 +28,7 @@
 #define __ARCH_64
 
 
+/* ------------------------------------------------------------------------- */
 
 #ifndef __USE_AES_NI 
 #include "rijndael-alg-fst.h"
@@ -69,7 +70,7 @@ typedef struct {
   Block k0[5], k1[5], k2[5], K[11];
 #endif
 
-  /* Tweaks, key. TODO Just keep even J offsets. */
+  /* Tweaks, key. TODO Store 2*J, 4*J, 8*J, and 16*J. */
   Block I, L, L1, J, Js [9]; 
 
 } Context; 
@@ -678,10 +679,95 @@ void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   xor_block(A, A, Delta); 
   xor_block(A, A, Sy); 
   store_block(&out[bytes - 32], A); 
-
-
-
 } // encipher()
+
+
+
+/* ----- AEZ-tiny ---------------------------------------------------------- */
+
+void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
+      unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
+{
+  unsigned rounds, i, j=7, k;
+  int step;
+  Byte mask=0x00, pad=0x80, L[16], R[16], buff[32];
+  Block Delta, tmp; 
+  
+  hash(Delta.byte, tags, num_tags, tag_bytes, context); 
+  
+  if      (bytes==1) rounds=24;
+  else if (bytes==2) rounds=16;
+  else if (bytes<16) rounds=10;
+  else {        j=6; rounds=8; }
+    
+  /* Split (bytes*8)/2 bits into L and R. Beware: inay end in nibble. */
+  memcpy(L, in,               (bytes+1)/2);
+  memcpy(R, in + bytes/2, (bytes+1)/2);
+  
+  /* inust shift R left by half a byte */
+  if (bytes & 1) 
+  { 
+    for (i=0; i < bytes/2; i++)
+      R[i] = (Byte)((R[i] << 4) | (R[i+1] >> 4));
+    R[bytes/2] = (Byte)(R[bytes/2] << 4);
+    pad = 0x08; mask = 0xf0;
+  }
+
+  if (inv) 
+  {
+    if (bytes < 16) 
+    {
+      memset(tmp.byte, 0, 16); 
+      memcpy(tmp.byte, in, bytes); 
+      tmp.byte[0] |= 0x80;
+      xor_block(tmp, tmp, Delta);
+      E(&tmp, tmp, 0, 3, context); 
+      L[0] ^= (tmp.byte[0] & 0x80);
+    }
+    i = rounds-1; step = -1;
+  } 
+  else 
+  {
+    i = 0; step = 1;
+  }
+  for (k=0; k < rounds/2; k++, i=(unsigned)((int)i+2*step)) 
+  {
+    memset(buff, 0, 16);
+    memcpy(buff,R,(bytes+1)/2);
+    buff[bytes/2] = (buff[bytes/2] & mask) | pad;
+    xor_bytes(tmp.byte, buff, Delta.byte, 16);
+    tmp.byte[15] ^= (Byte)i;
+    E(&tmp, tmp, 0, j, context); 
+    xor_bytes(L, L, tmp.byte, 16);
+
+    memset(buff, 0, 16);
+    memcpy(buff, L, (bytes + 1)/2);
+    buff[bytes/2] = (buff[bytes/2] & mask) | pad;
+    xor_bytes(tmp.byte, buff, Delta.byte, 16);
+    tmp.byte[15] ^= (Byte)((int)i+step);
+    E(&tmp, tmp, 0, j, context); 
+    xor_bytes(R, R, tmp.byte, 16);
+  }
+
+  memcpy(buff,           R, bytes/2);
+  memcpy(buff+bytes/2, L, (bytes+1)/2);
+  if (bytes & 1) 
+  {
+    for (i=bytes-1; i>bytes/2; i--)
+       buff[i] = (Byte)((buff[i] >> 4) | (buff[i-1] << 4));
+     buff[bytes/2] = (Byte)((L[0] >> 4) | (R[bytes/2] & 0xf0));
+  }
+
+  memcpy(out, buff, bytes);
+  if ((bytes < 16) && !inv) 
+  {
+    memset(buff+bytes,0,16-bytes); 
+    buff[0] |= 0x80;
+    xor_bytes(tmp.byte, buff, Delta.byte, 16);
+    E(&tmp, tmp, 0, 3, context); 
+    out[0] ^= (tmp.byte[0] & 0x80);
+  }
+} // encipher_tiny() 
 
 
 /* ----- Testing, testing ... ---------------------------------------------- */
@@ -711,7 +797,7 @@ static void display_context(Context *context)
 int main()
 {
   
-  unsigned msg_bytes = 5000; 
+  unsigned msg_bytes = 64; 
   Byte key [] = "This is a really great key.";
   Byte nonce [] = "Celebraties are awesome"; 
   Byte msg [msg_bytes]; memset(msg, 0, msg_bytes); 
@@ -721,6 +807,7 @@ int main()
   unsigned nonce_bytes = strlen((const char *)nonce); 
   unsigned tau = 16;
 
+  msg_bytes = 29;
   Context context;
   extract(&context, key, key_bytes);
   
@@ -730,8 +817,8 @@ int main()
   unsigned tag_bytes [] = {16, nonce_bytes, msg_bytes}; 
   unsigned num_tags = 3; 
   
-  encipher(ciphertext, msg, msg_bytes, tags, num_tags, tag_bytes, &context, 0); 
-  encipher(plaintext, ciphertext, msg_bytes, tags, num_tags, tag_bytes, &context, 1); 
+  encipher_tiny(ciphertext, msg, msg_bytes, tags, num_tags, tag_bytes, &context, 0); 
+  encipher_tiny(plaintext, ciphertext, msg_bytes, tags, num_tags, tag_bytes, &context, 1); 
 
   Byte checksum [16]; 
   memset(checksum, 0, 16); 
