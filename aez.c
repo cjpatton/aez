@@ -812,7 +812,7 @@ int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
 {
   unsigned tag_bytes [MAX_DATA + 2]; 
   Byte *tags [MAX_DATA + 2]; 
-  Byte *X = malloc(max(msg_bytes + auth_bytes, 16) * sizeof(Byte)); 
+  Byte *X = malloc((msg_bytes + auth_bytes) * sizeof(Byte)); 
   Block tau; tau.word[3] = reverse_u32(auth_bytes);
   
   tags[0] = tau.byte; tag_bytes[0] = 16; 
@@ -843,8 +843,8 @@ int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
 {
   int res = 0, i; 
   unsigned tag_bytes [MAX_DATA + 2]; 
-  Byte *X = malloc(max(msg_bytes, 16) * sizeof(Byte)); 
   Byte *tags [MAX_DATA + 2]; 
+  Byte *X = malloc(msg_bytes * sizeof(Byte)); 
   
   Block tau; tau.word[3] = reverse_u32(auth_bytes);
   tags[0] = tau.byte; tag_bytes[0] = 16; 
@@ -885,65 +885,107 @@ int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
 #include <time.h>
 #include <stdio.h>
 
+#define HZ (2.9e9) 
+#define TRIALS 100000
+
+void benchmark() {
+
+  static const int msg_len [] = {64,    128,   256,   512, 
+                                 1024,  4096,  10000, 100000,
+                                 1<<18, 1<<20, 1<<22 }; 
+  static const int num_msg_lens = 7; 
+  unsigned i, j, auth_bytes = 16, key_bytes = 16; 
+  
+  Context context; 
+  ALIGN(16) Block key;   memset(key.byte, 0, 16); 
+  ALIGN(16) Block nonce; memset(nonce.byte, 0, 16); 
+  extract(&context, key.byte, key_bytes);
+
+  Byte *message = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
+  Byte *ciphertext = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
+  Byte *plaintext = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
+
+  clock_t t; 
+  double total_cycles; 
+  double total_bytes; 
+
+  for (i = 0; i < num_msg_lens; i++)
+  {
+    t = clock(); 
+    for (j = 0; j < TRIALS; j++)
+    {
+      encrypt(ciphertext, message, msg_len[i], nonce.byte, 16, 
+          0, NULL, 0, auth_bytes, &context); 
+      nonce.word[0] ++; 
+    }
+    t = clock() - t; 
+    total_cycles = t * HZ / CLOCKS_PER_SEC; 
+    total_bytes = (double)TRIALS * msg_len[i]; 
+    printf("%8d bytes, %.2f cycles per byte\n", msg_len[i], 
+                               total_cycles/total_bytes); 
+  }
+  
+  //ciphertext[343] = 'o';
+  nonce.word[0] --; i --; 
+  if (decrypt(plaintext, ciphertext, msg_len[i] + auth_bytes, nonce.byte, 16,
+               0, NULL, 0, auth_bytes, &context) != INVALID)
+    printf("Success! ");
+  else 
+    printf("Tag mismatch. ");
+  printf("\n"); 
+
+  free(message); 
+  free(ciphertext); 
+  free(plaintext); 
+}
+
+  
+void verify() 
+{
+  Byte  key [] = "One day we will.", nonce [] = "Things are occuring!"; 
+  
+  Block sum; zero_block(sum); 
+
+  unsigned key_bytes = strlen((const char *)key), 
+           nonce_bytes = strlen((const char *)nonce), 
+           auth_bytes = 16, i, res, msg_len = 1024; 
+
+  Byte *message = malloc(auth_bytes + msg_len); 
+  Byte *ciphertext = malloc(auth_bytes + msg_len); 
+  Byte *plaintext = malloc(auth_bytes + msg_len); 
+  memset(ciphertext, 0, msg_len + auth_bytes); 
+  memset(plaintext, 0, msg_len + auth_bytes); 
+  memset(message, 0, msg_len + auth_bytes);
+  
+  Context context; 
+  extract(&context, key, key_bytes); 
+  //display_context(&context); 
+  for (i = 0; i < msg_len; i++)
+  {
+    encrypt(ciphertext, message, i, nonce, nonce_bytes, 
+          NULL, NULL, 0, auth_bytes, &context); 
+   
+    xor_bytes(sum.byte, sum.byte, ciphertext, 16); 
+  
+    res = decrypt(plaintext, ciphertext, i + auth_bytes, nonce, nonce_bytes, 
+           NULL, NULL, 0, auth_bytes, &context); 
+
+    if (res == INVALID)
+      printf("invalid\n");
+
+    if (memcmp(plaintext, message, i) != 0)
+      printf("msg length %d: plaintext mismatch!\n", i + auth_bytes); 
+  }
+  display_block(sum); printf("\n");
+  free(message); 
+  free(ciphertext); 
+  free(plaintext); 
+}
+
+
 int main()
 {
-  
-  unsigned msg_bytes = 4096; 
-  Byte key [] = "This is a really great key.";
-  Byte nonce [] = "Celebraties are awesome"; 
-  Byte msg [msg_bytes]; memset(msg, 0, msg_bytes); 
-  Byte ciphertext [msg_bytes]; memset(ciphertext, 0, msg_bytes); 
-  Byte plaintext [msg_bytes]; memset(plaintext, 0, msg_bytes); 
-  unsigned key_bytes = strlen((const char *)key); 
-  unsigned nonce_bytes = strlen((const char *)nonce); 
-  unsigned auth_bytes = 16;
-
-  Context context;
-  extract(&context, key, key_bytes);
-  
-  Byte fella[] = "Guy"; 
-  Byte *data[] = {fella}; 
-  unsigned num_data [] = {strlen((const char *)data[0])}; 
-
-  encrypt(ciphertext, msg, msg_bytes, 
-          nonce, nonce_bytes, data, num_data, 1, auth_bytes, &context);
-  
-  decrypt(plaintext, ciphertext, msg_bytes + auth_bytes, 
-          nonce, nonce_bytes, data, num_data, 1, auth_bytes, &context);
-
-  //encipher(ciphertext, msg, msg_bytes, tags, num_tags, tag_bytes, &context, 0); 
-  //encipher(plaintext, ciphertext, msg_bytes, tags, num_tags, tag_bytes, &context, 1); 
-
-  Byte checksum [16]; 
-  memset(checksum, 0, 16); 
-  for (int i = 0; i < msg_bytes; i += 16)
-    xor_bytes(checksum, checksum, &plaintext[i], 16); 
-  display_block(*(Block *)plaintext); printf("\n"); 
-  memset(checksum, 0, 16); 
-  for (int i = 0; i < msg_bytes; i += 16)
-    xor_bytes(checksum, checksum, &ciphertext[i], 16); 
-  display_block(*(Block *)ciphertext); printf("\n"); 
-
-  //display_context(&context);
-
-  //  Block M, C;
-  //  zero_block(M);
-  //  zero_block(C);
-  //  M.byte[1] = 2;
-  //  display_block(M); printf("Sane? \n");
-  //  Block fella [99]; 
-  //  zero_block(fella[0]);
-  //  cp_block(fella[1], context.Js[8]);
-  //  int j = 0;
-  //  for (int i = 2; i < 99; i++)
-  //  {
-  //    dot_inc(fella, i); 
-  //    xor_block(C, M, fella[i-1]); 
-  //    E(&C, C, i+1, j, &context);
-  //    printf("%2d,%-2d ", i,j); display_block(C); printf("\n"); 
-  //  }
-  
-
-
-return 0; 
+  verify(); 
+  //benchmark(); 
+  return 0; 
 }
