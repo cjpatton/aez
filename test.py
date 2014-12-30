@@ -10,7 +10,7 @@ P = '0' * len(M)
 
 try:
   context = _aez.new_Context()
-  _aez.extract(context, K, len(K))
+  _aez.aez_extract(context, K, len(K))
 
   _aez.aez_encrypt(C, M, len(M), N, len(N), None, None, 0, abytes, context)
   _aez.aez_decrypt(P, C, len(M) + abytes, N, len(N), None, None, 0, abytes, context)

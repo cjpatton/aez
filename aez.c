@@ -131,7 +131,7 @@ static void reset(Context *context)
 
 /* ----- AEZ Extract. ------------------------------------------------------ */
 
-void extract(Context *context, const Byte *key, unsigned key_bytes)
+void aez_extract(Context *context, const Byte *key, unsigned key_bytes)
 {
   unsigned i, j, k, m;
 
@@ -280,7 +280,7 @@ static void E(Block *Y, Block X, int i, int j, Context *context)
 
   else if (i >= 3 && j >= 1)
   {
-    /* The J-tweak is mixed in hash(). */ 
+    /* The J-tweak is mixed in aez_hash(). */ 
     xor_block(X, X, context->Js[j % 8]); 
     xor_block(X, X, context->L1);
 #ifdef __USE_AES_NI
@@ -293,7 +293,7 @@ static void E(Block *Y, Block X, int i, int j, Context *context)
 
   else
   { 
-    /* The J-tweak is mixed in hash(). */ 
+    /* The J-tweak is mixed in aez_hash(). */ 
 #ifdef __USE_AES_NI
     Y->block = aes4(X.block, (__m128i *)context->K, 0, 2, 1, 3);
 #else
@@ -305,9 +305,9 @@ static void E(Block *Y, Block X, int i, int j, Context *context)
 
 
 
-/* ----- AEZ axu-hash, pseudorandom funcion. ------------------------------- */
+/* ----- AEZ axu-aez_hash, pseudorandom funcion. ------------------------------- */
 
-void hash(Byte *delta, Byte *tags [], 
+void aez_hash(Byte *delta, Byte *tags [], 
                 unsigned num_tags, unsigned tag_bytes [],  Context *context)
 {
   unsigned i, j, k, m; 
@@ -354,10 +354,10 @@ void hash(Byte *delta, Byte *tags [],
   
   cp_bytes(delta, H.byte, 16);
   reset(context); 
-} // hash()
+} // aez_hash()
 
 
-void prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [], 
+void aez_prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [], 
                                                 unsigned tau, Context *context)
 {
   unsigned i, j, k, m = tau / 16; 
@@ -365,7 +365,7 @@ void prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [],
   m = max(m, 1); 
   
   Block H, X, ctr; zero_block(ctr); 
-  hash(H.byte, tags, num_tags, tag_bytes, context); 
+  aez_hash(H.byte, tags, num_tags, tag_bytes, context); 
 
   for (i=0, j=0; i < m-1; i++)
   {
@@ -382,7 +382,7 @@ void prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [],
   xor_block(X, ctr, H); 
   E(&X, X, -1, 3, context); 
   cp_bytes(&res[j], X.byte, tau - j); 
-} // prf()
+} // aez_prf()
 
 
 
@@ -397,7 +397,7 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   const unsigned d = bytes % 32; // Length of uv-block.
   unsigned i, j; 
 
-  hash(Delta.byte, tags, num_tags, tag_bytes, context); 
+  aez_hash(Delta.byte, tags, num_tags, tag_bytes, context); 
   
   /* First pass. */ 
   zero_block(X);
@@ -520,7 +520,7 @@ void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   Byte mask=0x00, pad=0x80, L[16], R[16], buff[32];
   Block Delta, tmp; 
   
-  hash(Delta.byte, tags, num_tags, tag_bytes, context); 
+  aez_hash(Delta.byte, tags, num_tags, tag_bytes, context); 
   
   if      (bytes==1) rounds=24;
   else if (bytes==2) rounds=16;
@@ -600,7 +600,7 @@ void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 
 /* ----- AEZ encipher. ----------------------------------------------------- */
 
-void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
+void aez_encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
 {
   if (bytes < 32) 
@@ -632,13 +632,13 @@ int aez_encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce
   }
 
   if (msg_bytes == 0)
-    prf(C, tags, num_data + 2, tag_bytes, auth_bytes, context); 
+    aez_prf(C, tags, num_data + 2, tag_bytes, auth_bytes, context); 
 
   else 
   {
     Byte *X = malloc((msg_bytes + auth_bytes) * sizeof(Byte)); 
     memcpy(X, M, msg_bytes); memset(&X[msg_bytes], 0, auth_bytes); 
-    encipher(C, X, msg_bytes + auth_bytes,
+    aez_encipher(C, X, msg_bytes + auth_bytes,
                             tags, num_data + 2, tag_bytes, context, 0); 
     free(X);
   }
@@ -667,14 +667,14 @@ int aez_decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce
   
   if (msg_bytes == auth_bytes)
   {
-    prf(X, tags, num_data + 2, tag_bytes, auth_bytes, context); 
+    aez_prf(X, tags, num_data + 2, tag_bytes, auth_bytes, context); 
     for (i = 0; i < msg_bytes; i++)
       res |= X[i] != C[i];
   }
 
   else
   {
-    encipher(X, C, msg_bytes, tags, num_data + 2, tag_bytes, context, 1);
+    aez_encipher(X, C, msg_bytes, tags, num_data + 2, tag_bytes, context, 1);
     for (i = msg_bytes - auth_bytes; i < msg_bytes; i++)
       res |= X[i] != 0; 
   }

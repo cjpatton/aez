@@ -192,12 +192,12 @@ void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n);
 
 /* ---- High level calls. -------------------------------------------------- */
 
-void extract(Context *context, const Byte *key, unsigned key_bytes);
+void aez_extract(Context *context, const Byte *key, unsigned key_bytes);
 
-void hash(Byte *delta, Byte *tags [], 
+void aez_hash(Byte *delta, Byte *tags [], 
                 unsigned num_tags, unsigned tag_bytes [],  Context *context);
 
-void prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [], 
+void aez_prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [], 
                                                 unsigned tau, Context *context);
 
 void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
@@ -206,7 +206,7 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv);
 
-void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
+void aez_encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv);
 
 int aez_encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,

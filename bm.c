@@ -50,7 +50,7 @@ void benchmark() {
   Context context; 
   ALIGN(16) Block key;   memset(key.byte, 0, 16); 
   ALIGN(16) Block nonce; memset(nonce.byte, 0, 16); 
-  extract(&context, key.byte, key_bytes);
+  aez_extract(&context, key.byte, key_bytes);
 
   Byte *message = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
   Byte *ciphertext = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
@@ -109,7 +109,7 @@ void verify()
   memset(message, 0, msg_len + auth_bytes);
   
   Context context; 
-  extract(&context, key, key_bytes); 
+  aez_extract(&context, key, key_bytes); 
   //display_context(&context); 
   for (i = 0; i < msg_len; i++)
   {

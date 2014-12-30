@@ -19,7 +19,7 @@ ifeq ($(arch), x64)
 endif
 
 
-wrapper: aez.i aez.h aez.c $(LINK)
+wrapper: aez.i aez.h aez.c 
 	swig -python aez.i
 	python setup.py build_ext --inplace
 
