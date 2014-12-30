@@ -599,14 +599,12 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   /* i-blocks */ 
   for (j = 1, i = 0; j <= m; j++)
   {
-    load_block(A, &in[i + 16]); 
-    E(&A, A, 1, j, context); 
-    xor_bytes(A.byte, A.byte, &in[i], 16); 
-    store_block(&out[i+16], A); // Wi
-    E(&A, A, 0, 0, context);  
-    xor_bytes(A.byte, A.byte, &in[i + 16], 16); 
-    store_block(&out[i], A); // Xi
-    xor_block(X, X, A); 
+    load_block(My, &in[i+16]); E(&A, My, 1, j, context); 
+    load_block(Mx, &in[i]);  xor_block(A, A, Mx); // Wi
+    E(&B, A, 0, 0, context); xor_block(B, B, My); // Xi
+    xor_block(X, X, B); 
+    store_block(&out[i], B); 
+    store_block(&out[i+16], A); 
     update(context, j % 8 == 0); i += 32; 
   }
   reset(context); 
@@ -648,14 +646,18 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   /* i-blocks */ 
   for (j = 1, i = 0; j <= m; j++)
   {
-    E(&A, S, 2, j, context); cp_block(B, A); // S'
-    xor_bytes(A.byte, &out[i+16]/* Wi */, A.byte, 16); // Yi
-    xor_block(Y, Y, A);
-    xor_bytes(B.byte, &out[i]/* Xi */, B.byte, 16); // Zi
-    E(&C, B, 0, 0, context); xor_block(C, C, A); // Ci'
-    E(&A, C, 1, j, context); 
-    xor_bytes(&out[i], B.byte, A.byte, 16); 
-    store_block(&out[i+16], C); 
+    E(&A, S, 2, j, context);
+    load_block(Mx, &out[i+16]); 
+    load_block(My, &out[i]); 
+    xor_block(B, A, Mx); 
+    xor_block(C, A, My); 
+    E(&Mx, C, 0, 0, context); 
+    xor_block(Mx, Mx, B); 
+    E(&My, Mx, 1, j, context); 
+    xor_block(My, My, C); 
+    store_block(&out[i], My); 
+    store_block(&out[i+16], Mx); 
+    xor_block(Y, Y, B); 
     update(context, j % 8 == 0); i += 32; 
   }
   reset(context); 
