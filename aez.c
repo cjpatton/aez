@@ -78,12 +78,27 @@ static void aes4_short(Block *Y, Block X, const Block K)
 
 /* ---- AEZ tweaks. -------------------------------------------------------- */
 
-/* Doubling operation for block cipher tweaeking. */
-static void dot2(Block *M) {
+/* Doubling operation for block cipher tweaeking. Super fast 
+ * AES-NI doubling code is due to Ted Krovetz. */ 
+static void dot2(Block *M) 
+{
+#ifdef __USE_AES_NI
+  M->block = _mm_shuffle_epi8(M->block,
+      _mm_set_epi8(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
+  const __m128i mask = _mm_set_epi32(135,1,1,1);
+  __m128i tmp = _mm_srai_epi32(M->block, 31);
+  tmp = _mm_and_si128(tmp, mask);
+  tmp = _mm_shuffle_epi32(tmp, _MM_SHUFFLE(2,1,0,3));
+  M->block = _mm_slli_epi32(M->block, 1);
+  M->block = _mm_xor_si128(M->block,tmp);
+  M->block = _mm_shuffle_epi8(M->block,
+      _mm_set_epi8(0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15));
+#else
   Byte *X = M->byte, tmp = X[0];
   for (int i = 0; i < 15; i++)
     X[i] = (Byte)((X[i] << 1) | (X[i+1] >> 7));
   X[15] = (Byte)((X[15] << 1) ^ ((tmp >> 7) * 135));
+#endif 
 }
 
 /* Incremental tweak generation. Precompute multiples of the tweaks. */
