@@ -6,22 +6,25 @@ x64=-D__ARCH_64
 LINK_AES=rijndael-alg-fst.o 
 NOLINK_AES=
 
+SWIG_OPT=
 MODDE=
 LINK=$(LINK_AES)
 
 ifeq ($(arch), aes-ni)
   MODE=$(AES_NI)
   LINK=$(NOLINK_AES)
+  SWIG_OPT=-D__USE_AES_NI
 endif
 
 ifeq ($(arch), x64)
   MODE=$(x64)
+  SWIG_OPT=-D__ARCH_64
 endif
 
 
 wrapper: aez.i aez.h aez.c 
-	swig -python aez.i
-	python setup.py build_ext --inplace
+	swig $(SWIG_OPT) -python aez.i
+	export EXTRA_CC_ARGS="$(MODE)" && python setup.py build_ext --inplace
 
 bm: bm.c aez.o
 	gcc $(CC_FLAGS) $(MODE) bm.c aez.o $(LINK)-o bm
