@@ -615,7 +615,7 @@ void encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 
 /* ----- AEZ encrypt and decrypt. ------------------------------------------ */
 
-int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
+int aez_encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
             Byte *A[], unsigned data_bytes[], unsigned num_data, 
             unsigned auth_bytes, Context *context)
 {
@@ -647,7 +647,7 @@ int encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
 } // encrypt()
 
 
-int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
+int aez_decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
             Byte *A[], unsigned data_bytes[], unsigned num_data, 
             unsigned auth_bytes, Context *context)
 {
