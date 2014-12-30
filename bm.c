@@ -65,7 +65,7 @@ void benchmark() {
     t = clock(); 
     for (j = 0; j < TRIALS; j++)
     {
-      encrypt(ciphertext, message, msg_len[i], nonce.byte, 16, 
+      aez_encrypt(ciphertext, message, msg_len[i], nonce.byte, 16, 
           0, NULL, 0, auth_bytes, &context); 
       nonce.word[0] ++; 
     }
@@ -78,7 +78,7 @@ void benchmark() {
   
   //ciphertext[343] = 'o';
   nonce.word[0] --; i --; 
-  if (decrypt(plaintext, ciphertext, msg_len[i] + auth_bytes, nonce.byte, 16,
+  if (aez_decrypt(plaintext, ciphertext, msg_len[i] + auth_bytes, nonce.byte, 16,
                0, NULL, 0, auth_bytes, &context) != INVALID)
     printf("Success! ");
   else 
@@ -113,12 +113,12 @@ void verify()
   //display_context(&context); 
   for (i = 0; i < msg_len; i++)
   {
-    encrypt(ciphertext, message, i, nonce, nonce_bytes, 
+    aez_encrypt(ciphertext, message, i, nonce, nonce_bytes, 
           NULL, NULL, 0, auth_bytes, &context); 
    
     xor_bytes(sum.byte, sum.byte, ciphertext, 16); 
   
-    res = decrypt(plaintext, ciphertext, i + auth_bytes, nonce, nonce_bytes, 
+    res = aez_decrypt(plaintext, ciphertext, i + auth_bytes, nonce, nonce_bytes, 
            NULL, NULL, 0, auth_bytes, &context); 
 
     if (res == INVALID)

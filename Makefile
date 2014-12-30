@@ -18,6 +18,11 @@ ifeq ($(arch), x64)
   MODE=$(x64)
 endif
 
+
+wrapper: aez.i aez.h aez.c $(LINK)
+	swig -python aez.i
+	python setup.py build_ext --inplace
+
 bm: bm.c aez.o
 	gcc $(CC_FLAGS) $(MODE) bm.c aez.o $(LINK)-o bm
 
@@ -32,4 +37,4 @@ rijndael-alg-fst.o: rijndael-alg-fst.h rijndael-alg-fst.c
 	gcc $(CC_FLAGS) -fpic -c rijndael-alg-fst.c
 
 clean: 
-	rm -fr *.o *.so bm
+	rm -fr *.o *.so bm build/ _aez.py _aez.so aez_wrap.c aez.py
