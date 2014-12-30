@@ -74,21 +74,19 @@ static void aes4_short(Block *Y, Block X, const Block K)
 
 
 
+
+
 /* ---- AEZ tweaks. -------------------------------------------------------- */
 
-/*
- * Multiply-by-two operation for key tweaking. 
- */
-static void dot2(Byte X []) {
-  Byte tmp = X[0];
+/* Doubling operation for block cipher tweaeking. */
+static void dot2(Block *M) {
+  Byte *X = M->byte, tmp = X[0];
   for (int i = 0; i < 15; i++)
     X[i] = (Byte)((X[i] << 1) | (X[i+1] >> 7));
   X[15] = (Byte)((X[15] << 1) ^ ((tmp >> 7) * 135));
 }
 
-/*
- * Incremental tweak generation. Used to precompute multiples of the tweaks. 
- */
+/* Incremental tweak generation. Precompute multiples of the tweaks. */
 static void dot_inc(Block *Xs, int n)
 {
   if (n == 0) 
@@ -100,7 +98,7 @@ static void dot_inc(Block *Xs, int n)
   else if (n == 2)
   {
     cp_block(Xs[2], Xs[1]);
-    dot2(Xs[2].byte);
+    dot2(&Xs[2]);
   }
 
   else if (n & 1) // odd
@@ -112,22 +110,18 @@ static void dot_inc(Block *Xs, int n)
   else // even
   {
     cp_block(Xs[n], Xs[n/2]);
-    dot2(Xs[n].byte); 
+    dot2(&Xs[n]); 
   }
 }
 
-/*
- * Update doubling tweak `L`. 
- */
+/* Update doubling tweak `L`. */
 static void update(Context *context, int inc_l) 
 {
   if (inc_l) 
-    dot2(context->L1.byte); 
+    dot2(&context->L1); 
 }
 
-/*
- * Reset tweak. 
- */
+/* Reset doubling tweak. */
 static void reset(Context *context)
 {
   cp_block(context->L1, context->K[1]);
