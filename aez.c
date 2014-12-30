@@ -16,199 +16,14 @@
  * flags are "-maes -mssse3".  
  */
 
-#include <assert.h>
-
-/*
- * Architecture flags. If the platform supports the AES-NI and SSSE3 instruction 
- * sets, set __USE_AES_NI; if the platform doesn't have hardware support for AES, 
- * but is a 64-bit architecture, then set __ARCH_64; if the system is 32-bit, un-
- * set both __USE_AES_NI and __ARCH_64. 
- */
-#define __USE_AES_NI
-#define __ARCH_64
-
-
-/* ------------------------------------------------------------------------- */
-
-#ifndef __USE_AES_NI 
-#include "rijndael-alg-fst.h"
-#else 
-#include <wmmintrin.h>
-#include <tmmintrin.h>
-#endif 
-
-#define MAX_DATA 3 /* Maximum length of additional data vector. */ 
-#define INVALID -1 /* Reject plaintext (inauthentic). */ 
-
-/* AES input/output/keys are block aligned in order to support AES-NI. */ 
-#define ALIGN(n) __attribute__ ((aligned(n))) 
-
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include "aez.h"
 
 
-/* ----- AEZ context. -------------------------------------------------------*/
-
-typedef uint8_t Byte; 
-typedef uint32_t Word; 
-typedef uint64_t Long; 
-
-typedef union {
-  ALIGN(16) Byte byte  [16]; /* Byte addressing needed for a few operations. */ 
-  ALIGN(16) Word word  [4];  /* 32-bit systems. */ 
-  ALIGN(16) Long lword [2];  /* 64-bit systems. */ 
-#ifdef __USE_AES_NI
-  __m128i block; 
-#endif
-} Block; 
-
-typedef struct {
-
-  /* TODO What about laying a schedule like 0,I,0,J,0,L? */ 
-#ifndef __USE_AES_NI
-  Block k0[5], k1[5], k2[5], Klong[11];
-#endif
-
-  /* Tweaks, key. TODO Store 2*J, 4*J, 8*J, and 16*J. */
-  Block K[4], L1, Js [9]; 
-  // K[0]=I, K[1]=L, K[2]=J, K[3]=Zero
-} Context; 
-
-
-static void display_block(const Block X)
-{
-  for (int i = 0; i < 4; i ++)
-    printf("0x%08x ", X.word[i]); 
-}
-
-static void display_context(Context *context)
-{
-  unsigned i; 
-  printf("+---------------------------------------------------+\n"); 
-  printf("| I   = "); display_block(context->K[0]);  printf("|\n"); 
-  printf("| J   = "); display_block(context->K[2]);  printf("|\n"); 
-  printf("d| L   = "); display_block(context->K[1]);  printf("|\n"); 
-  printf("| L'  = "); display_block(context->L1); printf("|\n"); 
-
-  for (i = 0; i < 9; i++)
-  {
-    printf("| %d*J = ", i); 
-    display_block(context->Js[i]); 
-    printf("|\n"); 
-  }
-
-  printf("+---------------------------------------------------+\n"); 
-}
-
-
-/* ---- Various primitives. ------------------------------------------------ */
-
-#define max(a, b) (a < b ? b : a)
-
-/* Reverse bytes of a 32-bit integer. */ 
-#define reverse_u32(n) ( \
- (((n) & 0x000000ffu) << 24) | \
- (((n) & 0x0000ff00u) <<  8) | \
- (((n) & 0x00ff0000u) >>  8) | \
- (((n) & 0xff000000u) >> 24)   \
-)
-
-/*
- * rinjdael-alg-fst.{h,c} requires key words in big endian byte order. 
- * toggle_endian() operates on 128-bit blocks. AES-NI doesn't have this
- * layout. 
- */
-#ifndef __USE_AES_NI 
-  #define toggle_endian(X) { \
-    (X).word[0] = reverse_u32((X).word[0]); \
-    (X).word[1] = reverse_u32((X).word[1]); \
-    (X).word[2] = reverse_u32((X).word[2]); \
-    (X).word[3] = reverse_u32((X).word[3]); \
-  }
-#else 
-  #define toggle_endian(X) { \
-  }
-#endif 
-
-#ifdef __USE_AES_NI /* Copy a block. */ 
-  #define cp_block(X, Y) { \
-    (X).block = (Y).block; \
-  }
-#else 
-  #ifdef __ARCH_64 
-    #define cp_block(X, Y) { \
-     (X).lword[0] = (Y).lword[0]; \
-     (X).lword[1] = (Y).lword[1]; \
-   }
-  #else
-    #define cp_block(X, Y) { \
-     (X).word[0] = (Y).word[0]; \
-     (X).word[1] = (Y).word[1]; \
-     (X).word[2] = (Y).word[2]; \
-     (X).word[3] = (Y).word[3]; \
-  }
-  #endif 
-#endif 
-
-#ifdef __USE_AES_NI /* Set block to zero. */ 
-  #define zero_block(X) { \
-    (X).block = _mm_setzero_si128(); \
-  }
-#else 
-  #ifdef __ARCH_64 
-    #define zero_block(X) { \
-      (X).lword[0] = 0; \
-      (X).lword[1] = 0; \
-    }
-  #else 
-    #define zero_block(X) { \
-      (X).word[0] = 0; \
-      (X).word[1] = 0; \
-      (X).word[2] = 0; \
-      (X).word[3] = 0; \
-    }
-  #endif
-#endif 
-
-#ifdef __USE_AES_NI /* XOR blocks. */ 
-  #define xor_block(X, Y, Z) { \
-    (X).block = (Y).block ^ (Z).block; \
-  }
-#else
-  #ifdef __ARCH_64
-    #define xor_block(X, Y, Z) { \
-      (X).lword[0] = (Y).lword[0] ^ (Z).lword[0]; \
-      (X).lword[1] = (Y).lword[1] ^ (Z).lword[1]; \
-    }
-  #else 
-    #define xor_block(X, Y, Z) { \
-      (X).word[0] = (Y).word[0] ^ (Z).word[0]; \
-      (X).word[1] = (Y).word[1] ^ (Z).word[1]; \
-      (X).word[2] = (Y).word[2] ^ (Z).word[2]; \
-      (X).word[3] = (Y).word[3] ^ (Z).word[3]; \
-    }
-  #endif 
-#endif
-
-#ifdef __USE_AES_NI
-  #define load_block(dst, src) { \
-    dst.block = _mm_loadu_si128((__m128i *)src); \
-  }
-  #define store_block(dst, src) { \
-    _mm_storeu_si128((__m128i*)dst, ((Block)src).block); \
-  }
-#else 
-  #define load_block(dst, src) memcpy(dst.byte, (Byte *)src, 16) 
-  #define store_block(dst, src) memcpy((Byte *)dst, ((Block)src).byte, 16) 
-#endif 
-
-/* Copy a partial block. */ 
-#define cp_bytes(dst, src, n) memcpy((Byte *)dst, (Byte *)src, n) 
-
-/* XOR a partial block. */
-static void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
+void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
 {
   for (int i = 0; i < n; i++)
     X[i] = Y[i] ^ Z[i]; 
@@ -241,7 +56,7 @@ static __m128i aes4(__m128i M, __m128i K[], int a, int b, int c, int d)
 }
 #endif
 
-void aes4_short(Block *Y, Block X, const Block K) 
+static void aes4_short(Block *Y, Block X, const Block K) 
 {
 #ifdef __USE_AES_NI
   X.block = _mm_aesenc_si128(X.block ^ K.block, K.block); 
@@ -423,7 +238,7 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
 
 /* ---- AEZ Tweakable blockcipher. ----------------------------------------- */
 
-void E(Block *Y, Block X, int i, int j, Context *context)
+static void E(Block *Y, Block X, int i, int j, Context *context)
 {
   if (i == -1 && 0 <= j && j <= 7)
   {
@@ -875,118 +690,3 @@ int decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_byt
   free(X); 
   return (res ? INVALID : 0); 
 } // encrypt()
-            
-
-
-
-
-
-/* ----- Testing, testing ... ---------------------------------------------- */
-
-#include <time.h>
-#include <stdio.h>
-
-#define HZ (2.9e9) 
-#define TRIALS 100000
-
-void benchmark() {
-
-  static const int msg_len [] = {64,    128,   256,   512, 
-                                 1024,  4096,  10000, 100000,
-                                 1<<18, 1<<20, 1<<22 }; 
-  static const int num_msg_lens = 7; 
-  unsigned i, j, auth_bytes = 16, key_bytes = 16; 
-  
-  Context context; 
-  ALIGN(16) Block key;   memset(key.byte, 0, 16); 
-  ALIGN(16) Block nonce; memset(nonce.byte, 0, 16); 
-  extract(&context, key.byte, key_bytes);
-
-  Byte *message = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
-  Byte *ciphertext = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
-  Byte *plaintext = malloc(auth_bytes + msg_len[num_msg_lens-1]); 
-
-  clock_t t; 
-  double total_cycles; 
-  double total_bytes; 
-
-  for (i = 0; i < num_msg_lens; i++)
-  {
-    t = clock(); 
-    for (j = 0; j < TRIALS; j++)
-    {
-      encrypt(ciphertext, message, msg_len[i], nonce.byte, 16, 
-          0, NULL, 0, auth_bytes, &context); 
-      nonce.word[0] ++; 
-    }
-    t = clock() - t; 
-    total_cycles = t * HZ / CLOCKS_PER_SEC; 
-    total_bytes = (double)TRIALS * msg_len[i]; 
-    printf("%8d bytes, %.2f cycles per byte\n", msg_len[i], 
-                               total_cycles/total_bytes); 
-  }
-  
-  //ciphertext[343] = 'o';
-  nonce.word[0] --; i --; 
-  if (decrypt(plaintext, ciphertext, msg_len[i] + auth_bytes, nonce.byte, 16,
-               0, NULL, 0, auth_bytes, &context) != INVALID)
-    printf("Success! ");
-  else 
-    printf("Tag mismatch. ");
-  printf("\n"); 
-
-  free(message); 
-  free(ciphertext); 
-  free(plaintext); 
-}
-
-  
-void verify() 
-{
-  Byte  key [] = "One day we will.", nonce [] = "Things are occuring!"; 
-  
-  Block sum; zero_block(sum); 
-
-  unsigned key_bytes = strlen((const char *)key), 
-           nonce_bytes = strlen((const char *)nonce), 
-           auth_bytes = 16, i, res, msg_len = 1024; 
-
-  Byte *message = malloc(auth_bytes + msg_len); 
-  Byte *ciphertext = malloc(auth_bytes + msg_len); 
-  Byte *plaintext = malloc(auth_bytes + msg_len); 
-  memset(ciphertext, 0, msg_len + auth_bytes); 
-  memset(plaintext, 0, msg_len + auth_bytes); 
-  memset(message, 0, msg_len + auth_bytes);
-  
-  Context context; 
-  extract(&context, key, key_bytes); 
-  //display_context(&context); 
-  for (i = 0; i < msg_len; i++)
-  {
-    encrypt(ciphertext, message, i, nonce, nonce_bytes, 
-          NULL, NULL, 0, auth_bytes, &context); 
-   
-    xor_bytes(sum.byte, sum.byte, ciphertext, 16); 
-  
-    res = decrypt(plaintext, ciphertext, i + auth_bytes, nonce, nonce_bytes, 
-           NULL, NULL, 0, auth_bytes, &context); 
-
-    if (res == INVALID)
-      printf("invalid\n");
-
-    if (memcmp(plaintext, message, i) != 0)
-      printf("msg length %d: plaintext mismatch!\n", i + auth_bytes); 
-  }
-  display_block(sum); printf("\n");
-  free(message); 
-  free(ciphertext); 
-  free(plaintext); 
-}
-
-
-int main()
-{
-  verify(); 
-  benchmark(); 
-  return 0; 
-}
