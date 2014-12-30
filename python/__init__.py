@@ -1,3 +1,1 @@
-import base
-
-base.test()
+from aez import Context
