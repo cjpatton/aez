@@ -19,10 +19,10 @@ endif
 bm: bm.c aez.o
 	gcc $(CC_FLAGS) $(MODE) bm.c aez.o $(LINK)-o bm
 
-aez.o: rijndael-alg-fst.o aez.h aez.c
+aez.o: $(LINK) aez.h aez.c
 	gcc $(CC_FLAGS) $(MODE) -c aez.c 
 
-libaez.so: rijndael-alg-fst.o aez.h aez.c
+libaez.so: $(LINK) aez.h aez.c
 	gcc $(CC_FLAGS) $(MODE) -fpic -c aez.c 
 	gcc -shared -o libaez.so aez.o $(LINK)
 
