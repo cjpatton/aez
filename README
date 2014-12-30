@@ -1,0 +1,8 @@
+AEZ builds for three different architectures: 32-bit x86 (default), 64-bit x86,
+and 64-bit x86 with support for AES-NI. For example, 
+
+  $ make bm arch=aes-ni 
+  $ make bm arch=x64
+  $ make bm
+
+

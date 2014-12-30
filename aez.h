@@ -25,8 +25,8 @@
  * but is a 64-bit architecture, then set __ARCH_64; if the system is 32-bit, un-
  * set both __USE_AES_NI and __ARCH_64. 
  */
-#define __USE_AES_NI
-#define __ARCH_64
+//#define __USE_AES_NI
+//#define __ARCH_64
 
 
 /* ------------------------------------------------------------------------- */
