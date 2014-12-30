@@ -1,19 +1,14 @@
 /**
  * aez.h -- AEZv3, a Caesar submission proposed by Viet Tung Hoang, Ted Krovetz,
- * and Phillip Rogaway. This implementation is deesigned to be as fast as 
- * possible on the target architecture. 
+ * and Phil Rogaway. It uses a platform-independent implementation of AES (by 
+ * Vincent Rijmen et al.) if the x86 AES-NI instruction set is unavailable (see 
+ * the  provided rijndael-alg-fst.{h,c}). This code is unmodified, exceppt that 
+ * the flag `INTERMEDIATE_VALUE_KAT` is set. 
  *
- * It uses a platform-independent implementation of AES (by Vincent Rijmen 
- * et al.) if the x86 AES-NI instruction set is unavailable (see 
- * rijndael-alg-fst.{h,c}). This code is unmodified, exceppt that the flag 
- * `INTERMEDIATE_VALUE_KAT` is set. 
+ * Written by Chris Patton <chrispatton@gmail.com> and dedicated to the public
+ * domain. 
  *
- *   Written by Chris Patton <chrispatton@gmail.com>.
- *
- * This program is dedicated to the public domain. 
- *
- * Compile with "-Wall -O3 -std=c99 aez.c rijndael-alg-fst.c". The usual AES-NI 
- * flags are "-maes -mssse3".  
+ * Last modified 29 Dec 2014. 
  */
 
 #ifndef AEZ_H
@@ -23,10 +18,11 @@
  * Architecture flags. If the platform supports the AES-NI and SSSE3 instruction 
  * sets, set __USE_AES_NI; if the platform doesn't have hardware support for AES, 
  * but is a 64-bit architecture, then set __ARCH_64; if the system is 32-bit, un-
- * set both __USE_AES_NI and __ARCH_64. 
+ * set both __USE_AES_NI and __ARCH_64. These are set by the Makefile.  
  */
 //#define __USE_AES_NI
 //#define __ARCH_64
+
 
 
 /* ------------------------------------------------------------------------- */
@@ -46,6 +42,8 @@
 
 #include <stdint.h>
 
+
+
 /* ----- AEZ context. -------------------------------------------------------*/
 
 typedef uint8_t Byte; 
@@ -61,17 +59,26 @@ typedef union {
 #endif
 } Block; 
 
+
+/* 
+ * AEZ context. For AES-NI, the state size is 14 blocks (or 224 bytes). Two 
+ * of these (K[3] and Js[0]) are just zero, so one or both could potentially
+ * be elminated. The odd-valued i*J tweaks could be elminated from the state
+ * since i*J = i-1*J ^ 1*J for odd i. For software AES, the context is 
+ * substantially larger since we explicitly lay out the key schedules. 
+ */
 typedef struct {
 
-  /* TODO What about laying a schedule like 0,I,0,J,0,L? */ 
+  Block L1,     /* Cache for doubling L-tweak. */
+        K [4],  /* K[0]=I, K[1]=L, K[2]=J, K[3]=0 */
+        Js [9]; /* Js = [0*J, 1*J, 2*J ... 8*J]. */
+
 #ifndef __USE_AES_NI
   Block k0[5], k1[5], k2[5], Klong[11];
 #endif
 
-  /* Tweaks, key. TODO Store 2*J, 4*J, 8*J, and 16*J. */
-  Block K[4], L1, Js [9]; 
-  // K[0]=I, K[1]=L, K[2]=J, K[3]=Zero
 } Context; 
+
 
 
 /* ---- Various primitives. ------------------------------------------------ */

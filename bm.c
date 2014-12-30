@@ -1,5 +1,7 @@
 /**
+ * bm.c - Benchmarking and compliance. Last modified 29 Dec 2014. 
  */
+
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +10,7 @@
 #include <stdio.h>
 #include "aez.h"
 
-#define HZ (2.9e9) 
+#define HZ (2.9e9) /* CPU speed of host sytem. */ 
 #define TRIALS 100000
 
 void display_block(const Block X)
@@ -130,7 +132,6 @@ void verify()
   free(ciphertext); 
   free(plaintext); 
 }
-
 
 int main()
 {

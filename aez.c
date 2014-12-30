@@ -1,27 +1,14 @@
 /**
  * aez.c -- AEZv3, a Caesar submission proposed by Viet Tung Hoang, Ted Krovetz,
- * and Phillip Rogaway. This implementation is deesigned to be as fast as 
- * possible on the target architecture. 
+ * and Phillip Rogaway. Written by Chris Patton <chrispatton@gmail.com> and 
+ * dedicated to the public domain. 
  *
- * It uses a platform-independent implementation of AES (by Vincent Rijmen 
- * et al.) if the x86 AES-NI instruction set is unavailable (see 
- * rijndael-alg-fst.{h,c}). This code is unmodified, exceppt that the flag 
- * `INTERMEDIATE_VALUE_KAT` is set. 
- *
- *   Written by Chris Patton <chrispatton@gmail.com>.
- *
- * This program is dedicated to the public domain. 
- *
- * Compile with "-Wall -O3 -std=c99 aez.c rijndael-alg-fst.c". The usual AES-NI 
- * flags are "-maes -mssse3".  
+ * Last modified 29 Dec 2014. 
  */
 
-#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include "aez.h"
-
 
 void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
 {
@@ -73,13 +60,10 @@ static void aes4_short(Block *Y, Block X, const Block K)
 } 
 
 
-
-
-
 /* ---- AEZ tweaks. -------------------------------------------------------- */
 
 /* Doubling operation for block cipher tweaeking. Super fast 
- * AES-NI doubling code is due to Ted Krovetz. */ 
+ * AES-NI code is due to Ted Krovetz. */ 
 static void dot2(Block *M) 
 {
 #ifdef __USE_AES_NI
@@ -222,7 +206,7 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
   /* Doubling tweak. */
   cp_block(context->L1, X[2]); 
 
-#ifndef __USE_AES_NI
+#ifndef __USE_AES_NI /* Layout key schedules explicitly. */
   zero_block(context->k0[0]); zero_block(context->k0[4]); 
   zero_block(context->k1[0]); zero_block(context->k1[4]); 
   zero_block(context->k2[0]); zero_block(context->Klong[0]); 
@@ -240,7 +224,6 @@ void extract(Context *context, const Byte *key, unsigned key_bytes)
   cp_block(context->k2[1], context->K[1]); cp_block(context->Klong[2], context->K[1]);
   cp_block(context->Klong[5], context->K[1]);  cp_block(context->Klong[8], context->K[1]);
 #endif
-
 } // extract()
 
 
@@ -318,7 +301,6 @@ static void E(Block *Y, Block X, int i, int j, Context *context)
     cp_block(*Y, X); 
 #endif
   }
-
 } // E()
 
 
@@ -526,6 +508,10 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 
 /* ----- AEZ-tiny. --------------------------------------------------------- */
 
+/* 
+ * This routine was adapted with minimal modification from Ted Krovetz' 
+ * reference implementation. 
+ */
 void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
 {

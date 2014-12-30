@@ -1,3 +1,5 @@
+# Last modified 29 Dec 2014. 
+
 CC_FLAGS=-std=c99 -O3 -Wall
 AES_NI=-maes -mssse3 -D__USE_AES_NI
 x64=-D__ARCH_64
