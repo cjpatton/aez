@@ -22,9 +22,14 @@ ifeq ($(arch), x64)
 endif
 
 
-wrapper: aez.i aez.h aez.c 
-	swig $(SWIG_OPT) -python aez.i
-	export EXTRA_CC_ARGS="$(MODE)" && python setup.py build_ext --inplace
+pytmod: aez.i aez.h aez.c
+	export SWIG_OPT="$(SWIG_OPT)" && export EXTRA_CC_ARGS="$(MODE)" && python setup.py build
+	export SWIG_OPT="$(SWIG_OPT)" && export EXTRA_CC_ARGS="$(MODE)" && python setup.py build_ext
+	rm -f aez.py aez_wrap.c
+
+install:
+	export SWIG_OPT="$(SWIG_OPT)" && export EXTRA_CC_ARGS="$(MODE)" && python setup.py install
+
 
 bm: bm.c aez.o
 	gcc $(CC_FLAGS) $(MODE) bm.c aez.o $(LINK)-o bm
@@ -40,4 +45,4 @@ rijndael-alg-fst.o: rijndael-alg-fst.h rijndael-alg-fst.c
 	gcc $(CC_FLAGS) -fpic -c rijndael-alg-fst.c
 
 clean: 
-	rm -fr *.o *.so bm build/ _aez.py _aez.so aez_wrap.c aez.py
+	rm -fr *.o *.so bm build/ aez.py _aez.py _aez.so aez_wrap.c *.pyc

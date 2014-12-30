@@ -8,14 +8,22 @@ if a is not None and a is not '':
   cc_args += a
 else: a = []
 
-sources = ['aez_wrap.c', 'aez.c'] 
+sources = ['aez.i', 'aez.c'] 
 if len(a) < 2: # 32-bit or 64-bit
   sources.append('rijndael-alg-fst.c')
+
+a = os.environ.get('SWIG_OPT')
+if a is not None and a is not '':
+  swig_opt = a.split(' ')
+else: swig_opt = []
 
 setup (name="AEZ",
        version="3",
        author="Chris Patton",
-       ext_modules=[Extension('_aez', sources=sources, extra_compile_args=cc_args)
+       ext_modules=[Extension('aez._aez', sources=sources, 
+                          extra_compile_args=cc_args,
+                          swig_opts = swig_opt)
                    ],
-       py_modules=['aez']
+       packages=['aez'],
+       package_dir={"aez" : 'python'}
 )
