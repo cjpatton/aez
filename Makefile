@@ -6,19 +6,16 @@ x64=-D__ARCH_64
 LINK_AES=rijndael-alg-fst.o 
 NOLINK_AES=
 
-SWIG_OPT=
-MODDE=
+MODE=
 LINK=$(LINK_AES)
 
 ifeq ($(arch), aes-ni)
   MODE=$(AES_NI)
   LINK=$(NOLINK_AES)
-  SWIG_OPT=-D__USE_AES_NI
 endif
 
 ifeq ($(arch), x64)
   MODE=$(x64)
-  SWIG_OPT=-D__ARCH_64
 endif
 
 lib: $(LINK) aez.h aez.c
