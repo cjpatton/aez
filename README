@@ -4,11 +4,5 @@ AES-NI, do
 
   $ make bm arch=aes-ni 
 
-Or, similarly, arch=x64. Omitting the `arch` argument defaults to 32-bit. To
-install the python wrapper, do
-
-  $ sudo make arch=aes-ni install 
-  $ sudo ldconfig
-
-Then you should be able to `import aez` in Python.
+Or, similarly, arch=x64. Omitting the `arch` argument defaults to 32-bit. 
 

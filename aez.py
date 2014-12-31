@@ -1,14 +1,13 @@
-#import _aez
 import ctypes
 
+# Interface with AEZ code. 
 ctypes.cdll.LoadLibrary("libaez.so") 
 _aez = ctypes.CDLL("libaez.so")
-INVALID =  _aez.get_invalid()
 MAX_DATA = _aez.get_max_data()
 
 ABYTES = 16
 
-def data2params(A): 
+def format_ad(A): 
   if len(A) == 0:
     return (None, None, 0)
   
@@ -42,11 +41,17 @@ class Context (ctypes.Structure):
               ('K',  ctypes.c_ubyte * 16 * 4), 
               ('Js', ctypes.c_ubyte * 16 * 9)]
 
+  if not _aez.using_aes_ni():
+    _fields_ += [('k0', ctypes.c_ubyte * 16 * 5), 
+                 ('k1', ctypes.c_ubyte * 16 * 5), 
+                 ('k2', ctypes.c_ubyte * 16 * 5), 
+                 ('Klong', ctypes.c_ubyte * 16 * 11)]
+
   def __init__(self, K):
     _aez.aez_extract(ctypes.pointer(self), K, len(K)); 
   
   def Encipher(self, M, A=[]): 
-    (tags, tag_bytes, num_tags) = data2params(A)
+    (tags, tag_bytes, num_tags) = format_ad(A)
     C = '0' * len(M)
     _aez.aez_encipher(C, M, len(M),
                       tags, num_tags, tag_bytes,
@@ -54,7 +59,7 @@ class Context (ctypes.Structure):
     return C
   
   def Decipher(self, C, A=[]): 
-    (tags, tag_bytes, num_tags) = data2params(A)
+    (tags, tag_bytes, num_tags) = format_ad(A)
     M = '0' * len(C)
     _aez.aez_encipher(M, C, len(C),
                       tags, num_tags, tag_bytes,
@@ -62,7 +67,7 @@ class Context (ctypes.Structure):
     return M
 
   def Encrypt(self, M, N, A=[], abytes=ABYTES): 
-    (tags, tag_bytes, num_tags) = data2params(A)
+    (tags, tag_bytes, num_tags) = format_ad(A)
     C = '0' * (len(M) + abytes)
     _aez.aez_encrypt(C, M, len(M), N, len(N), 
                      tags, tag_bytes, num_tags,
@@ -70,26 +75,42 @@ class Context (ctypes.Structure):
     return C
   
   def Decrypt(self, C, N, A=[], abytes=ABYTES): 
-    (tags, tag_bytes, num_tags) = data2params(A)
+    (tags, tag_bytes, num_tags) = format_ad(A)
     M = '0' * (len(C) - abytes)
     res = _aez.aez_decrypt(M, C, len(C), N, len(N), 
                            tags, tag_bytes, num_tags,
                            abytes, ctypes.pointer(self))
-    if res == INVALID:
+    if res == _aez.get_invalid():
       return None
     return M
 
   def Hash(self, A=[]):
-    (tags, tag_bytes, num_tags) = data2params(A)
+    (tags, tag_bytes, num_tags) = format_ad(A)
     H = '0' * 16
     _aez.aez_hash(H, tags, num_tags, tag_bytes, ctypes.pointer(self))
     return H
 
   def PRF(self, A=[], abytes=ABYTES):
-    (tags, tag_bytes, num_tags) = data2params(A)
+    (tags, tag_bytes, num_tags) = format_ad(A)
     X = '0' * abytes
     _aez.aez_prf(X, tags, num_tags, tag_bytes, abytes, ctypes.pointer(self))
     return X
 
 
+def Encipher(M, K, A=[]): 
+  return Context(K).Encipher(M, A)
 
+def Decipher(C, K, A=[]): 
+  return Context(K).Decipher(M, A)
+
+def Encrypt(M, K, N, A=[], abytes=ABYTES):
+  return Context(K).Encrypt(M, N, A, abytes)
+
+def Decrypt(C, K, N, A=[], abytes=ABYTES): 
+  return Context(K).Decrypt(M, N, A, abytes)
+
+def Hash(K, A=[]):
+  return Context(K).Hash(A)
+
+def PRF(K, A=[], abytes=ABYTES):
+  return Context(K).PRF(A, abytes)
