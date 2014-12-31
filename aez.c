@@ -10,9 +10,6 @@
 #include <string.h>
 #include "aez.h"
 
-const int MAX_DATA = 5; 
-const int INVALID = -1;  
-
 void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
 {
   for (int i = 0; i < n; i++)
@@ -688,3 +685,11 @@ int aez_decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce
   free(X); 
   return (res ? INVALID : 0); 
 } // encrypt()
+
+
+/* ---- Python interface accessors. ---------------------------------------- */
+
+int get_max_data() { return MAX_DATA; }
+int get_invalid()  { return INVALID; }
+int using_aes_ni() { return USING_AES_NI; } 
+

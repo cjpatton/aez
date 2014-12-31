@@ -34,8 +34,13 @@
 #include <tmmintrin.h>
 #endif 
 
-extern const int MAX_DATA; /* Maximum length of additional data vector. */ 
-extern const int INVALID;  /* Reject plaintext (inauthentic). */ 
+#define MAX_DATA 5  /* Maximum length of additional data vector. */ 
+#define INVALID -1  /* Reject plaintext (inauthentic). */ 
+#ifdef __USE_AES_NI
+  #define USING_AES_NI 1
+#else 
+  #define USING_AES_NI 0
+#endif
 
 /* AES input/output/keys are block aligned in order to support AES-NI. */ 
 #define ALIGN(n) __attribute__ ((aligned(n))) 
@@ -216,5 +221,12 @@ int aez_encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce
 int aez_decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
             Byte *A[], unsigned data_bytes[], unsigned num_data, 
             unsigned auth_bytes, Context *context);
+
+
+/* ---- Acessors for Python interface. ------------------------------------- */
+
+int get_max_data(); /* Access constants in Python via Ctypes. */  
+int get_invalid(); 
+int useing_aes_ni(); 
 
 #endif // AEZ_H
