@@ -10,7 +10,7 @@ benchmarks for AES-NI, do
   $ make bm arch=aes-ni 
 
 To build for 64-bit systems, use `arch=x64`. Running `make` without this
-arguments defaults to 32-bit. 
+argument defaults to 32-bit. 
 
   This directory also contains a simple wrapper for Python based on Ctypes.
 First build a shared library and add it to the library path. On Linux: 
@@ -24,7 +24,14 @@ Next, Install the wrapper:
   $ sudo python setup.py install 
 
 It should now be accesible in Python:
-  
+
   $ python
   >>> import aez
+  >>> K = 'This is a key.'; N = 'This is a nonce.'
+  >>> A = ['This', 'is', ('some', 'fancy'), 1.61803, 'data.']
+  >>> C = aez.Encrypt('Hello, world!', K, N, A, abytes=7)
+  >>> repr(C)
+  "'\\x8f\\xed\\xdf\\x19\\xa5eY\\xb1\\xd8\\xd2{^\\x89\\x1e\\xdcZ\\xf8\\x95\\xb8]'"
+  >>> aez.Decrypt(C, K, N, A, abytes=7)
+  'Hello, world!'
 

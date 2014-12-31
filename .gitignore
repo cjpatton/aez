@@ -2,4 +2,5 @@
 *~
 *.swp
 *.pyc
+build
 aez_ref.c

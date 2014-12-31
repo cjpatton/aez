@@ -38,7 +38,7 @@ def Encrypt(M, K, N, A=[], abytes=ABYTES):
 
 # Return None if plaintext is invalid.
 def Decrypt(C, K, N, A=[], abytes=ABYTES): 
-  return Context(K).Decrypt(M, N, A, abytes)
+  return Context(K).Decrypt(C, N, A, abytes)
 
 def Hash(K, A):
   return Context(K).Hash(A)
