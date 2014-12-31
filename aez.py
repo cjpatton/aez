@@ -63,6 +63,7 @@ class Context (ctypes.Structure):
   # without AES-NI, then we must include additional key schedules 
   # for software AES. 
 
+  _pack_ = 16
   _fields_ = [('L1', ctypes.c_ubyte * 16),
               ('K',  ctypes.c_ubyte * 16 * 4), 
               ('Js', ctypes.c_ubyte * 16 * 9)]
