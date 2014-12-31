@@ -34,8 +34,8 @@
 #include <tmmintrin.h>
 #endif 
 
-#define MAX_DATA 3 /* Maximum length of additional data vector. */ 
-#define INVALID -1 /* Reject plaintext (inauthentic). */ 
+extern const int MAX_DATA; /* Maximum length of additional data vector. */ 
+extern const int INVALID;  /* Reject plaintext (inauthentic). */ 
 
 /* AES input/output/keys are block aligned in order to support AES-NI. */ 
 #define ALIGN(n) __attribute__ ((aligned(n))) 

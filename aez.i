@@ -21,6 +21,9 @@ typedef struct {
 
 } Context; 
 
+%constant int MAX_DATA; 
+%constant int INVALID; 
+
 void aez_extract(Context *context, const Byte *key, unsigned key_bytes);
 
 void aez_hash(Byte *delta, Byte *tags [], 

@@ -41,7 +41,7 @@ class Context:
                            None, None, 0,
                            #A, [len(a) for a in A], len(A), 
                            abytes, self.x)
-    if res == -1:
+    if res == _aez.INVALID:
       return None
     return M
 

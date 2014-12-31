@@ -10,6 +10,9 @@
 #include <string.h>
 #include "aez.h"
 
+const int MAX_DATA = 5; 
+const int INVALID = -1;  
+
 void xor_bytes(Byte X [], const Byte Y [], const Byte Z [], unsigned n)
 {
   for (int i = 0; i < n; i++)
