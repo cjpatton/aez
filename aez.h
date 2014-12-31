@@ -34,8 +34,8 @@
 #include <tmmintrin.h>
 #endif 
 
-#define MAX_DATA 5  /* Maximum length of additional data vector. */ 
-#define INVALID -1  /* Reject plaintext (inauthentic). */ 
+#define MAX_DATA 10  /* Maximum length of additional data vector. */ 
+#define INVALID -1   /* Reject plaintext (inauthentic). */ 
 #ifdef __USE_AES_NI
   #define USING_AES_NI 1
 #else 

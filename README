@@ -1,8 +1,30 @@
-AEZ builds for three different architectures: 32-bit x86 (default), 64-bit x86,
-and 64-bit x86 with support for AES-NI. For example, to build benchmarks for 
-AES-NI, do 
+An implementation of AEZv3, an authenticated encryption scheme designed by 
+Viet Tung Hoang, Ted Krovetz, and Phil Rogaway. AEZ is a submission in the 
+CAESAR crypto competition. Written by Chris Patton <chrispatton@gmail.com> 
+for the public domain in the hopes that it will be useful. 
+
+  The code builds for three different architectures: 32-bit x86 (default), 
+64-bit x86, and 64-bit x86 with support for AES-NI. For example, to build 
+benchmarks for AES-NI, do 
 
   $ make bm arch=aes-ni 
 
-Or, similarly, arch=x64. Omitting the `arch` argument defaults to 32-bit. 
+To build for 64-bit systems, use `arch=x64`. Running `make` without this
+arguments defaults to 32-bit. 
+
+  This directory also contains a simple wrapper for Python based on Ctypes.
+First build a shared library and add it to the library path. On Linux: 
+  
+  $ make lib arch=aes-ni 
+  $ sudo cp libaez.so /usr/local/lib
+  $ sudo ldconfig
+
+Next, Install the wrapper: 
+  
+  $ sudo python setup.py install 
+
+It should now be accesible in Python:
+  
+  $ python
+  >>> import aez
 

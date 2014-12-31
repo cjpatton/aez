@@ -1,6 +1,6 @@
 /**
  * aez.c -- AEZv3, a Caesar submission proposed by Viet Tung Hoang, Ted Krovetz,
- * and Phillip Rogaway. Written by Chris Patton <chrispatton@gmail.com> and 
+ * and Phil Rogaway. Written by Chris Patton <chrispatton@gmail.com> and 
  * dedicated to the public domain. 
  *
  * Last modified 29 Dec 2014. 

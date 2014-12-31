@@ -21,15 +21,15 @@ ifeq ($(arch), x64)
   SWIG_OPT=-D__ARCH_64
 endif
 
+lib: $(LINK) aez.h aez.c
+	gcc $(CC_FLAGS) $(MODE) -fpic -c aez.c 
+	gcc -shared -o libaez.so aez.o $(LINK)
+
 bm: bm.c aez.o
 	gcc $(CC_FLAGS) $(MODE) bm.c aez.o $(LINK)-o bm
 
 aez.o: $(LINK) aez.h aez.c
 	gcc $(CC_FLAGS) $(MODE) -c aez.c 
-
-libaez.so: $(LINK) aez.h aez.c
-	gcc $(CC_FLAGS) $(MODE) -fpic -c aez.c 
-	gcc -shared -o libaez.so aez.o $(LINK)
 
 rijndael-alg-fst.o: rijndael-alg-fst.h rijndael-alg-fst.c
 	gcc $(CC_FLAGS) -fpic -c rijndael-alg-fst.c
