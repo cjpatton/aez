@@ -510,7 +510,7 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 
 /* 
  * This routine was adapted with minimal modification from Ted Krovetz' 
- * reference implementation. 
+ * reference implementation of AEZ v 2.1.
  */
 void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
