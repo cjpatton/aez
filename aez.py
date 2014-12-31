@@ -8,6 +8,7 @@
 # Features to add: 
 #  - Target formats for plaintexts and ciphtertexts.
 #  - Length preserving? 
+#  - Efficiently incrementing nonce. 
 
 import ctypes
 import ctypes.util
