@@ -45,11 +45,11 @@
 /* AES input/output/keys are block aligned in order to support AES-NI. */ 
 #define ALIGN(n) __attribute__ ((aligned(n))) 
 
-#include <stdint.h>
-
 
 
 /* ----- AEZ context. -------------------------------------------------------*/
+
+#include <stdint.h>
 
 typedef uint8_t Byte; 
 typedef uint32_t Word; 
@@ -227,6 +227,6 @@ int aez_decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce
 
 int get_max_data(); /* Access constants in Python via Ctypes. */  
 int get_invalid(); 
-int useing_aes_ni(); 
+int using_aes_ni(); 
 
 #endif // AEZ_H
