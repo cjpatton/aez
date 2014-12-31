@@ -19,11 +19,11 @@ First build a shared library and add it to the library path. On Linux:
   $ sudo cp libaez.so /usr/local/lib
   $ sudo ldconfig
 
-Next, Install the wrapper: 
+Next, install the wrapper: 
   
   $ sudo python setup.py install 
 
-It should now be accesible in Python:
+AEZ should now be accesible in Python:
 
   $ python
   >>> import aez
