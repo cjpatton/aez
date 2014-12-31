@@ -50,7 +50,7 @@ def Encipher(M, K, A=[]):
   return Context(K).Encipher(M, A)
 
 def Decipher(C, K, A=[]): 
-  return Context(K).Decipher(M, A)
+  return Context(K).Decipher(C, A)
 
 
 ### Context object. ###########################################################
