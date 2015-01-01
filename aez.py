@@ -146,6 +146,8 @@ def _format_ad(A):
   # classes will likely produce a different string on either end 
   # of the communication channel. 
 
+  if type(A) is not list: A = [A]
+
   if len(A) == 0:
     return (None, None, 0)
   
