@@ -206,13 +206,15 @@ void aez_prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [],
                                                 unsigned tau, Context *context);
 
 void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
-      unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv);
+      unsigned num_tags, unsigned tag_bytes [], Context *context, 
+      unsigned auth_bytes, unsigned inv);
 
 void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
       unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv);
 
 void aez_encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
-      unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv);
+      unsigned num_tags, unsigned tag_bytes [], Context *context, 
+      unsigned auth_bytes, unsigned inv);
 
 int aez_encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce_bytes,
             Byte *A[], unsigned data_bytes[], unsigned num_data, 

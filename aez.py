@@ -83,7 +83,7 @@ class Context (ctypes.Structure):
     C = '0' * len(M)
     _aez.aez_encipher(C, M, len(M),
                       tags, num_tags, tag_bytes,
-                      ctypes.pointer(self), 0)
+                      ctypes.pointer(self), 0, 0)
     return C
   
   def Decipher(self, C, A=[]): 
@@ -91,7 +91,7 @@ class Context (ctypes.Structure):
     M = '0' * len(C)
     _aez.aez_encipher(M, C, len(C),
                       tags, num_tags, tag_bytes,
-                      ctypes.pointer(self), 1)
+                      ctypes.pointer(self), 0, 1)
     return M
 
   def Encrypt(self, M, N, A=[], abytes=ABYTES): 
@@ -164,3 +164,5 @@ def _format_ad(A):
     _tag_bytes = (ctypes.c_uint * len(tag_bytes))()
     _tag_bytes[:] = tag_bytes
     return (_tags, _tag_bytes, len(tags))
+
+

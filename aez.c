@@ -389,7 +389,8 @@ void aez_prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [],
 /* ----- AEZ-core. --------------------------------------------------------- */
 
 void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
-      unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
+      unsigned num_tags, unsigned tag_bytes [], Context *context, 
+      unsigned auth_bytes, unsigned inv)
 {
   Block Delta, X, Y, S, Sx, Sy, Mx, My, Mu, Mv, A, B, C; 
  
@@ -445,7 +446,20 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   E(&Sy, Sx, -1, 1 + inv, context); 
   xor_block(Sy, Sy, My); 
   xor_block(S, Sx, Sy); 
-  
+  E(&A, Sy, -1, 2 - inv, context); 
+  xor_block(A, A, Sx); // Cy
+  store_block(&out[bytes - 16], A); 
+
+  /* We can already check the the last 16 authentication bytes. (Note that 
+   * the whole authentication tag must be checked in decryption before 
+   * releasing the plaintext.) */
+  if (inv)
+  {
+    for (j=0,i=bytes-max(16,auth_bytes); i<bytes; i++)
+      j |= out[i]; 
+    if (j) return;  
+  }
+
   /* Second pass. */ 
   zero_block(Y);
   
@@ -494,9 +508,7 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
   }
 
   /* xy-block */ 
-  E(&A, Sy, -1, 2 - inv, context); 
-  xor_block(A, A, Sx); // Cy
-  store_block(&out[bytes - 16], A); 
+  load_block(A, &out[bytes - 16]); 
   E(&A, A, 0, 2 - inv, context);
   xor_block(A, A, Y); 
   xor_block(A, A, Delta); 
@@ -601,13 +613,15 @@ void encipher_tiny(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
 /* ----- AEZ encipher. ----------------------------------------------------- */
 
 void aez_encipher(Byte *out, const Byte *in, unsigned bytes, Byte *tags [], 
-      unsigned num_tags, unsigned tag_bytes [], Context *context, unsigned inv)
+      unsigned num_tags, unsigned tag_bytes [], Context *context,
+      unsigned auth_bytes, unsigned inv)
 {
   if (bytes < 32) 
     encipher_tiny(out, in, bytes, tags, num_tags, tag_bytes, context, inv);
 
   else 
-    encipher_core(out, in, bytes, tags, num_tags, tag_bytes, context, inv);
+    encipher_core(out, in, bytes, tags, num_tags, tag_bytes, context, 
+                       auth_bytes, inv);
 
 } // encipher()
 
@@ -636,11 +650,9 @@ int aez_encrypt(Byte C[], Byte M[], unsigned msg_bytes, Byte N[], unsigned nonce
 
   else 
   {
-    Byte *X = malloc((msg_bytes + auth_bytes) * sizeof(Byte)); 
-    memcpy(X, M, msg_bytes); memset(&X[msg_bytes], 0, auth_bytes); 
-    aez_encipher(C, X, msg_bytes + auth_bytes,
-                            tags, num_data + 2, tag_bytes, context, 0); 
-    free(X);
+    memcpy(C, M, msg_bytes); memset(&C[msg_bytes], 0, auth_bytes); 
+    aez_encipher(C, C, msg_bytes + auth_bytes, tags, num_data + 2, 
+                          tag_bytes, context, auth_bytes, 0); 
   }
 
   return 0; 
@@ -674,9 +686,10 @@ int aez_decrypt(Byte M[], Byte C[], unsigned msg_bytes, Byte N[], unsigned nonce
 
   else
   {
-    aez_encipher(X, C, msg_bytes, tags, num_data + 2, tag_bytes, context, 1);
+    aez_encipher(X, C, msg_bytes, tags, num_data + 2, tag_bytes, context, 
+                    auth_bytes, 1);
     for (i = msg_bytes - auth_bytes; i < msg_bytes; i++)
-      res |= X[i] != 0; 
+      res |= X[i]; 
   }
 
   if (res != INVALID)
