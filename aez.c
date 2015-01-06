@@ -455,7 +455,7 @@ void encipher_core(Byte *out, const Byte *in, unsigned bytes, Byte *tags [],
    * releasing the plaintext.) */
   if (inv)
   {
-    for (j=0,i=bytes-max(16,auth_bytes); i<bytes; i++)
+    for (j=0,i=bytes-min(16,auth_bytes); i<bytes; i++)
       j |= out[i]; 
     if (j) return;  
   }

@@ -89,6 +89,7 @@ typedef struct {
 /* ---- Various primitives. ------------------------------------------------ */
 
 #define max(a, b) (a < b ? b : a)
+#define min(a, b) (a > b ? b : a)
 
 /* Reverse bytes of a 32-bit integer. */ 
 #define reverse_u32(n) ( \
