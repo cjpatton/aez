@@ -31,7 +31,12 @@ AEZ should now be accesible in Python:
   >>> A = ['This', 'is', ('some', 'fancy'), 1.61803, 'data.']
   >>> C = aez.Encrypt('Hello, world!', K, N, A, abytes=7)
   >>> repr(C)
-  "'\\x8f\\xed\\xdf\\x19\\xa5eY\\xb1\\xd8\\xd2{^\\x89\\x1e\\xdcZ\\xf8\\x95\\xb8]'"
+  "'\\x8f\\xed\\xdf\\x19\\xa5eY\\xb1\\xd8\\xd2{^\\x89\\x1e\\xdcZ
+  \\xf8\\x95\\xb8]'"
   >>> aez.Decrypt(C, K, N, A, abytes=7)
   'Hello, world!'
 
+  This code matches the spec and reference code precisely, except the vector-
+valued additional data `A` has at most 10 elements. (See `MAX_DATA` in aez.h.) 
+This was just to prevent extra malloc()'s in aez_hash() and aez_encrypt(). Find
+the spect at web.cs.ucdavis.edu/~rogaway/aez/. 
