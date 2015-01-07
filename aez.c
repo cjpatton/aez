@@ -360,7 +360,7 @@ void aez_hash(Byte *delta, Byte *tags [],
 void aez_prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [], 
                                                 unsigned tau, Context *context)
 {
-  unsigned i, j, k, m = tau / 16; 
+  unsigned i, j, m = tau / 16; 
   if (tau % 16 > 0) m++; 
   m = max(m, 1); 
   
@@ -374,9 +374,7 @@ void aez_prf(Byte *res, Byte *tags [], unsigned num_tags, unsigned tag_bytes [],
     cp_bytes(&res[j], X.byte, 16); 
     j += 16;
 
-    k = 15; /* TODO, ctr doesn't match spec. */  
-    do { ctr.byte[k]++; k--; } 
-    while (ctr.byte[k+1] == 0); 
+    ctr.word[3] = reverse_u32(j); 
   }
 
   xor_block(X, ctr, H); 
