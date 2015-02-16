@@ -15,8 +15,8 @@
 
 void display_block(const Block X)
 {
-  for (int i = 0; i < 4; i ++)
-    printf("0x%08x ", X.word[i]); 
+  for (int i = 0; i < 16; i++)
+    printf("%x", X.byte[i]);
 }
 
 void display_context(Context *context)
