@@ -1,4 +1,4 @@
-An implementation of AEZv3, an authenticated encryption scheme designed by 
+An implementation of AEZ v3, an authenticated encryption scheme designed by 
 Viet Tung Hoang, Ted Krovetz, and Phil Rogaway. AEZ is a submission in the 
 CAESAR crypto competition. Written by Chris Patton <chrispatton@gmail.com> 
 for the public domain in the hopes that it will be useful. 
@@ -29,11 +29,10 @@ AEZ should now be accesible in Python:
   >>> import aez
   >>> K = 'This is a key.'; N = 'This is a nonce.'
   >>> A = ['This', 'is', ('some', 'fancy'), 1.61803, 'data.']
-  >>> C = aez.Encrypt('Hello, world!', K, N, A, abytes=7)
+  >>> C = aez.Encrypt('Hello, world!', K, N, A, abytes=3)
   >>> repr(C)
-  "'\\x8f\\xed\\xdf\\x19\\xa5eY\\xb1\\xd8\\xd2{^\\x89\\x1e\\xdcZ
-  \\xf8\\x95\\xb8]'"
-  >>> aez.Decrypt(C, K, N, A, abytes=7)
+  "'USb\\x0b\\x00+\\xecQ\\xa1\\x84K\\xb1q\\xe3\\xc5t'"
+  >>> aez.Decrypt(C, K, N, A, abytes=3)
   'Hello, world!'
 
   This code matches the spec and reference code precisely, except the vector-
