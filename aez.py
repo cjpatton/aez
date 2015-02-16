@@ -3,7 +3,7 @@
 # Chris Patton <chrispatton@gmail.com> and dedicated to the 
 # public domain.
 
-# Last Modified 30 Dec 2014. 
+# Last Modified 16 Feb 2015. 
 # 
 # Features to add: 
 #  - Target formats for plaintexts and ciphtertexts.

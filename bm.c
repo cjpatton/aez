@@ -1,5 +1,5 @@
 /**
- * bm.c - Benchmarking and compliance. Last modified 29 Dec 2014. 
+ * bm.c - Benchmarking and compliance. Last modified 15 Feb 2015. 
  */
 
 #include <stdint.h>
